@@ -3,9 +3,23 @@ package internal
 import (
 	"fmt"
 	"os"
+	"slices"
+	"strings"
 
 	"github.com/parquet-go/parquet-go"
 	"github.com/parquet-go/parquet-go/compress/zstd"
+)
+
+const (
+	// RowsPerGroup controls how many rows go into each Parquet row group.
+	// Smaller row groups = more granular predicate pushdown over the network
+	// (engines skip entire row groups whose min/max stats don't match).
+	// 50K rows yields ~4 row groups for a typical 210K-row hospital file.
+	RowsPerGroup = 50000
+
+	// bloomBitsPerValue controls bloom filter sizing. 10 bits/value ≈ 1%
+	// false positive rate — a good trade-off between filter size and accuracy.
+	bloomBitsPerValue = 10
 )
 
 // ChargeWriter writes HospitalChargeRow records to a Parquet file configured
@@ -13,27 +27,25 @@ import (
 //
 // Writer configuration rationale:
 //
-//	Zstd(3): ~20-30% smaller files than Snappy with acceptable write overhead.
-//	Good decode speed for query engines.
+//   - Zstd(3): ~20-30% smaller than Snappy with acceptable write overhead.
 //
-//	64MB row groups: balances row-group-level min/max skip (smaller = more
-//	granular skip) against compression ratio (larger = better dictionary reuse).
-//	For typical hospital files (1-10M rows), this yields 5-50 row groups —
-//	enough for effective predicate pushdown.
+//   - Rows sorted by cpt_code ascending: clusters rows by the most common
+//     query predicate, producing tight per-row-group min/max statistics so
+//     engines can skip row groups that can't match.
 //
-//	Column page size 8KB: enables page-level filtering within row groups
-//	when the engine supports column indexes (DuckDB 0.9+, Spark 3.3+).
+//   - 50K rows per row group: for a 210K-row file this yields ~4 row groups.
+//     More row groups = finer-grained predicate pushdown over the network.
 //
-//	Statistics on every column: row-group min/max stored for all columns,
-//	enabling skip on any predicate.
+//   - Bloom filters on all 19 code columns plus payer_name/plan_name: lets
+//     engines definitively rule out a row group with a small read, even when
+//     min/max ranges overlap.
 //
-// For best query performance, sort input rows by (description, payer_name)
-// before writing. This maximizes row-group skip for the two most common
-// filter patterns: "find charges for procedure X" and "find charges by payer".
+//   - 8KB page size with statistics: enables page-level filtering within row
+//     groups (DuckDB 0.9+, Spark 3.3+).
 type ChargeWriter struct {
 	file   *os.File
 	writer *parquet.GenericWriter[HospitalChargeRow]
-	count  int
+	rows   []HospitalChargeRow
 }
 
 // NewChargeWriter creates a Parquet writer optimized for analytical queries.
@@ -45,10 +57,32 @@ func NewChargeWriter(filename string) (*ChargeWriter, error) {
 
 	writer := parquet.NewGenericWriter[HospitalChargeRow](file,
 		parquet.Compression(&zstd.Codec{Level: zstd.SpeedDefault}),
-		parquet.PageBufferSize(8*1024),        // 8KB pages for page-level filtering
-		parquet.WriteBufferSize(64*1024*1024), // 64MB row groups
-		parquet.DataPageStatistics(true),      // page-level min/max for column indexes
+		parquet.PageBufferSize(8*1024),
+		parquet.DataPageStatistics(true),
 		parquet.CreatedBy("pricetool", "1.0", ""),
+		parquet.BloomFilters(
+			parquet.SplitBlockFilter(bloomBitsPerValue, "cpt_code"),
+			parquet.SplitBlockFilter(bloomBitsPerValue, "hcpcs_code"),
+			parquet.SplitBlockFilter(bloomBitsPerValue, "ms_drg_code"),
+			parquet.SplitBlockFilter(bloomBitsPerValue, "ndc_code"),
+			parquet.SplitBlockFilter(bloomBitsPerValue, "rc_code"),
+			parquet.SplitBlockFilter(bloomBitsPerValue, "icd_code"),
+			parquet.SplitBlockFilter(bloomBitsPerValue, "drg_code"),
+			parquet.SplitBlockFilter(bloomBitsPerValue, "cdm_code"),
+			parquet.SplitBlockFilter(bloomBitsPerValue, "local_code"),
+			parquet.SplitBlockFilter(bloomBitsPerValue, "apc_code"),
+			parquet.SplitBlockFilter(bloomBitsPerValue, "eapg_code"),
+			parquet.SplitBlockFilter(bloomBitsPerValue, "hipps_code"),
+			parquet.SplitBlockFilter(bloomBitsPerValue, "cdt_code"),
+			parquet.SplitBlockFilter(bloomBitsPerValue, "r_drg_code"),
+			parquet.SplitBlockFilter(bloomBitsPerValue, "s_drg_code"),
+			parquet.SplitBlockFilter(bloomBitsPerValue, "aps_drg_code"),
+			parquet.SplitBlockFilter(bloomBitsPerValue, "ap_drg_code"),
+			parquet.SplitBlockFilter(bloomBitsPerValue, "apr_drg_code"),
+			parquet.SplitBlockFilter(bloomBitsPerValue, "tris_drg_code"),
+			parquet.SplitBlockFilter(bloomBitsPerValue, "payer_name"),
+			parquet.SplitBlockFilter(bloomBitsPerValue, "plan_name"),
+		),
 	)
 
 	return &ChargeWriter{
@@ -57,19 +91,34 @@ func NewChargeWriter(filename string) (*ChargeWriter, error) {
 	}, nil
 }
 
-// Write writes a batch of rows. Callers should batch rows (e.g. 10K at a time)
-// to amortize write overhead.
+// Write buffers rows. Rows are sorted and flushed on Close.
 func (w *ChargeWriter) Write(rows []HospitalChargeRow) (int, error) {
-	n, err := w.writer.Write(rows)
-	w.count += n
-	if err != nil {
-		return n, fmt.Errorf("write parquet rows: %w", err)
-	}
-	return n, nil
+	w.rows = append(w.rows, rows...)
+	return len(rows), nil
 }
 
-// Close flushes the final row group and closes the file.
+// Close sorts all buffered rows by cpt_code, writes them in fixed-size row
+// groups (flushing after each group to force row group boundaries), and closes.
 func (w *ChargeWriter) Close() error {
+	slices.SortFunc(w.rows, func(a, b HospitalChargeRow) int {
+		return cmpOptStr(a.CPTCode, b.CPTCode)
+	})
+
+	for i := 0; i < len(w.rows); i += RowsPerGroup {
+		end := i + RowsPerGroup
+		if end > len(w.rows) {
+			end = len(w.rows)
+		}
+		if _, err := w.writer.Write(w.rows[i:end]); err != nil {
+			w.file.Close()
+			return fmt.Errorf("write parquet rows: %w", err)
+		}
+		if err := w.writer.Flush(); err != nil {
+			w.file.Close()
+			return fmt.Errorf("flush row group: %w", err)
+		}
+	}
+
 	if err := w.writer.Close(); err != nil {
 		w.file.Close()
 		return fmt.Errorf("close parquet writer: %w", err)
@@ -77,7 +126,21 @@ func (w *ChargeWriter) Close() error {
 	return w.file.Close()
 }
 
-// Count returns the total number of rows written.
+// Count returns the total number of rows buffered.
 func (w *ChargeWriter) Count() int {
-	return w.count
+	return len(w.rows)
+}
+
+// cmpOptStr compares two optional strings, with nil (null) sorting first.
+func cmpOptStr(a, b *string) int {
+	if a == nil && b == nil {
+		return 0
+	}
+	if a == nil {
+		return -1
+	}
+	if b == nil {
+		return 1
+	}
+	return strings.Compare(*a, *b)
 }

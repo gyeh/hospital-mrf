@@ -1,15 +1,21 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"pricetool/internal"
 	"strings"
+	"syscall"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 // chargeReader is the common interface for CSV and JSON readers.
@@ -37,12 +43,41 @@ func main() {
 		base := strings.TrimSuffix(filepath.Base(*inputFile), filepath.Ext(*inputFile))
 		*outputFile = base + ".parquet"
 	}
-	if err := convert(*inputFile, *outputFile, *batchSize, *skipPayerCharges); err != nil {
+
+	s3Dest := ""
+	localOut := *outputFile
+	if strings.HasPrefix(*outputFile, "s3://") {
+		s3Dest = *outputFile
+		f, err := os.CreateTemp("", "hospital-loader-*.parquet")
+		if err != nil {
+			log.Fatalf("create temp file: %v", err)
+		}
+		localOut = f.Name()
+		f.Close()
+		// Ensure temp file is cleaned up on exit and signals.
+		defer os.Remove(localOut)
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		go func() {
+			<-sigCh
+			os.Remove(localOut)
+			os.Exit(1)
+		}()
+	}
+
+	displayOut := *outputFile
+	if err := convert(*inputFile, localOut, displayOut, *batchSize, *skipPayerCharges); err != nil {
 		log.Fatal(err)
+	}
+
+	if s3Dest != "" {
+		if err := uploadToS3(context.Background(), localOut, s3Dest); err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 
-func convert(inputPath, outputPath string, batchSize int, skipPayerCharges bool) error {
+func convert(inputPath, outputPath, displayPath string, batchSize int, skipPayerCharges bool) error {
 	start := time.Now()
 
 	isJSON := strings.EqualFold(filepath.Ext(inputPath), ".json")
@@ -81,7 +116,7 @@ func convert(inputPath, outputPath string, batchSize int, skipPayerCharges bool)
 	}
 
 	fmt.Printf("Input:   %s\n", inputPath)
-	fmt.Printf("Output:  %s\n", outputPath)
+	fmt.Printf("Output:  %s\n", displayPath)
 	fmt.Printf("Format:  %s\n", reader.Format())
 	if csvReader != nil && csvReader.Format() == "wide" {
 		fmt.Printf("Payers:  %d payer/plan combinations\n", csvReader.PayerPlanCount())
@@ -162,5 +197,54 @@ func convert(inputPath, outputPath string, batchSize int, skipPayerCharges bool)
 			float64(outSize)/1024/1024, float64(fileSize)/float64(outSize))
 	}
 
+	return nil
+}
+
+// parseS3URI splits "s3://bucket/key/path" into bucket and key.
+func parseS3URI(uri string) (bucket, key string, err error) {
+	uri = strings.TrimPrefix(uri, "s3://")
+	parts := strings.SplitN(uri, "/", 2)
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("invalid S3 URI: must be s3://bucket/key")
+	}
+	return parts[0], parts[1], nil
+}
+
+func uploadToS3(ctx context.Context, localPath, s3URI string) error {
+	bucket, key, err := parseS3URI(s3URI)
+	if err != nil {
+		return err
+	}
+
+	f, err := os.Open(localPath)
+	if err != nil {
+		return fmt.Errorf("open local file for upload: %w", err)
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("stat local file: %w", err)
+	}
+
+	fmt.Printf("\nUploading %.1f MB to %s ...\n", float64(fi.Size())/1024/1024, s3URI)
+	start := time.Now()
+
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("load AWS config: %w", err)
+	}
+
+	client := s3.NewFromConfig(cfg)
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+		Body:   f,
+	})
+	if err != nil {
+		return fmt.Errorf("S3 PutObject: %w", err)
+	}
+
+	fmt.Printf("Uploaded in %s\n", time.Since(start).Round(time.Millisecond))
 	return nil
 }

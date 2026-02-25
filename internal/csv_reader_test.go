@@ -5,10 +5,18 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/parquet-go/parquet-go"
 )
+
+// sortRowsByCPT sorts rows by cpt_code (nulls first) to match Parquet output order.
+func sortRowsByCPT(rows []HospitalChargeRow) {
+	slices.SortFunc(rows, func(a, b HospitalChargeRow) int {
+		return cmpOptStr(a.CPTCode, b.CPTCode)
+	})
+}
 
 // writeTallCSV creates a Tall-format CSV test file.
 // Includes both payer_name/plan_name AND standard_charge|negotiated_dollar
@@ -191,68 +199,71 @@ func TestCSVReaderTallToParquet(t *testing.T) {
 		}
 	}
 
-	// ── Row 0: ECHOCARDIOGRAM / Aetna ────────────────────────────────
-	r := pqRows[0]
-	if r.Description != "ECHOCARDIOGRAM COMPLETE" {
-		t.Errorf("row[0].Description = %q", r.Description)
+	// Parquet rows are sorted by cpt_code (nulls first). Build a lookup
+	// by description+payer to verify specific rows regardless of order.
+	find := func(desc string, payer *string) *HospitalChargeRow {
+		for i := range pqRows {
+			r := &pqRows[i]
+			payerMatch := (payer == nil && r.PayerName == nil) ||
+				(payer != nil && r.PayerName != nil && *payer == *r.PayerName)
+			if r.Description == desc && payerMatch {
+				return r
+			}
+		}
+		t.Fatalf("row not found: desc=%q payer=%v", desc, payer)
+		return nil
 	}
+
+	// ── ECHOCARDIOGRAM / Aetna ───────────────────────────────────────
+	r := find("ECHOCARDIOGRAM COMPLETE", strPtr("Aetna"))
 	if r.Setting != "outpatient" {
-		t.Errorf("row[0].Setting = %q", r.Setting)
+		t.Errorf("ECHO/Aetna Setting = %q", r.Setting)
 	}
-	assertStrPtrEq(t, "row[0].CPTCode", r.CPTCode, strPtr("93306"))
-	assertStrPtrEq(t, "row[0].HCPCSCode", r.HCPCSCode, strPtr("G0389"))
-	assertF64PtrEq(t, "row[0].GrossCharge", r.GrossCharge, f64Ptr(1500.00))
-	assertF64PtrEq(t, "row[0].DiscountedCash", r.DiscountedCash, f64Ptr(750.00))
-	assertF64PtrEq(t, "row[0].MinCharge", r.MinCharge, f64Ptr(500.00))
-	assertF64PtrEq(t, "row[0].MaxCharge", r.MaxCharge, f64Ptr(2000.00))
-	assertStrPtrEq(t, "row[0].PayerName", r.PayerName, strPtr("Aetna"))
-	assertStrPtrEq(t, "row[0].PlanName", r.PlanName, strPtr("Aetna PPO"))
-	assertF64PtrEq(t, "row[0].NegotiatedDollar", r.NegotiatedDollar, f64Ptr(900.00))
-	assertStrPtrEq(t, "row[0].Methodology", r.Methodology, strPtr("fee_schedule"))
+	assertStrPtrEq(t, "ECHO/Aetna CPTCode", r.CPTCode, strPtr("93306"))
+	assertStrPtrEq(t, "ECHO/Aetna HCPCSCode", r.HCPCSCode, strPtr("G0389"))
+	assertF64PtrEq(t, "ECHO/Aetna GrossCharge", r.GrossCharge, f64Ptr(1500.00))
+	assertF64PtrEq(t, "ECHO/Aetna DiscountedCash", r.DiscountedCash, f64Ptr(750.00))
+	assertF64PtrEq(t, "ECHO/Aetna MinCharge", r.MinCharge, f64Ptr(500.00))
+	assertF64PtrEq(t, "ECHO/Aetna MaxCharge", r.MaxCharge, f64Ptr(2000.00))
+	assertStrPtrEq(t, "ECHO/Aetna PlanName", r.PlanName, strPtr("Aetna PPO"))
+	assertF64PtrEq(t, "ECHO/Aetna NegotiatedDollar", r.NegotiatedDollar, f64Ptr(900.00))
+	assertStrPtrEq(t, "ECHO/Aetna Methodology", r.Methodology, strPtr("fee_schedule"))
 
-	// ── Row 1: ECHOCARDIOGRAM / UHC ──────────────────────────────────
-	r = pqRows[1]
-	assertStrPtrEq(t, "row[1].PayerName", r.PayerName, strPtr("UnitedHealthcare"))
-	assertStrPtrEq(t, "row[1].PlanName", r.PlanName, strPtr("UHC Choice Plus"))
-	assertF64PtrEq(t, "row[1].NegotiatedDollar", r.NegotiatedDollar, f64Ptr(1100.00))
-	assertStrPtrEq(t, "row[1].Methodology", r.Methodology, strPtr("case_rate"))
-	// Same codes as row 0
-	assertStrPtrEq(t, "row[1].CPTCode", r.CPTCode, strPtr("93306"))
-	assertStrPtrEq(t, "row[1].HCPCSCode", r.HCPCSCode, strPtr("G0389"))
+	// ── ECHOCARDIOGRAM / UHC ─────────────────────────────────────────
+	r = find("ECHOCARDIOGRAM COMPLETE", strPtr("UnitedHealthcare"))
+	assertStrPtrEq(t, "ECHO/UHC PlanName", r.PlanName, strPtr("UHC Choice Plus"))
+	assertF64PtrEq(t, "ECHO/UHC NegotiatedDollar", r.NegotiatedDollar, f64Ptr(1100.00))
+	assertStrPtrEq(t, "ECHO/UHC Methodology", r.Methodology, strPtr("case_rate"))
+	assertStrPtrEq(t, "ECHO/UHC CPTCode", r.CPTCode, strPtr("93306"))
+	assertStrPtrEq(t, "ECHO/UHC HCPCSCode", r.HCPCSCode, strPtr("G0389"))
 
-	// ── Row 2: ACETAMINOPHEN / drug info ─────────────────────────────
-	r = pqRows[2]
-	if r.Description != "ACETAMINOPHEN 500MG TABLET" {
-		t.Errorf("row[2].Description = %q", r.Description)
-	}
+	// ── ACETAMINOPHEN / drug info ────────────────────────────────────
+	r = find("ACETAMINOPHEN 500MG TABLET", strPtr("Cigna"))
 	if r.Setting != "inpatient" {
-		t.Errorf("row[2].Setting = %q", r.Setting)
+		t.Errorf("ACET Setting = %q", r.Setting)
 	}
-	assertStrPtrEq(t, "row[2].NDCCode", r.NDCCode, strPtr("00456-0422-01"))
-	assertStrPtrEq(t, "row[2].CPTCode", r.CPTCode, nil)
-	assertF64PtrEq(t, "row[2].GrossCharge", r.GrossCharge, f64Ptr(15.50))
-	assertF64PtrEq(t, "row[2].DiscountedCash", r.DiscountedCash, f64Ptr(8.25))
-	assertF64PtrEq(t, "row[2].DrugUnitOfMeasurement", r.DrugUnitOfMeasurement, f64Ptr(500.0))
-	assertStrPtrEq(t, "row[2].DrugTypeOfMeasurement", r.DrugTypeOfMeasurement, strPtr("ME"))
-	assertStrPtrEq(t, "row[2].AdditionalGenericNotes", r.AdditionalGenericNotes, strPtr("Oral tablet only"))
-	assertStrPtrEq(t, "row[2].PayerName", r.PayerName, strPtr("Cigna"))
-	assertStrPtrEq(t, "row[2].PlanName", r.PlanName, strPtr("Cigna Open Access"))
-	assertF64PtrEq(t, "row[2].NegotiatedDollar", r.NegotiatedDollar, f64Ptr(10.00))
-	assertStrPtrEq(t, "row[2].Methodology", r.Methodology, strPtr("fee_schedule"))
+	assertStrPtrEq(t, "ACET NDCCode", r.NDCCode, strPtr("00456-0422-01"))
+	assertStrPtrEq(t, "ACET CPTCode", r.CPTCode, nil)
+	assertF64PtrEq(t, "ACET GrossCharge", r.GrossCharge, f64Ptr(15.50))
+	assertF64PtrEq(t, "ACET DiscountedCash", r.DiscountedCash, f64Ptr(8.25))
+	assertF64PtrEq(t, "ACET DrugUnitOfMeasurement", r.DrugUnitOfMeasurement, f64Ptr(500.0))
+	assertStrPtrEq(t, "ACET DrugTypeOfMeasurement", r.DrugTypeOfMeasurement, strPtr("ME"))
+	assertStrPtrEq(t, "ACET AdditionalGenericNotes", r.AdditionalGenericNotes, strPtr("Oral tablet only"))
+	assertStrPtrEq(t, "ACET PlanName", r.PlanName, strPtr("Cigna Open Access"))
+	assertF64PtrEq(t, "ACET NegotiatedDollar", r.NegotiatedDollar, f64Ptr(10.00))
+	assertStrPtrEq(t, "ACET Methodology", r.Methodology, strPtr("fee_schedule"))
 
-	// ── Row 3: HEART TRANSPLANT / no payer, with modifiers ───────────
-	r = pqRows[3]
-	if r.Description != "HEART TRANSPLANT WITH MCC" {
-		t.Errorf("row[3].Description = %q", r.Description)
-	}
-	assertStrPtrEq(t, "row[3].MSDRGCode", r.MSDRGCode, strPtr("001"))
-	assertStrPtrEq(t, "row[3].PayerName", r.PayerName, nil)
-	assertStrPtrEq(t, "row[3].PlanName", r.PlanName, nil)
-	assertF64PtrEq(t, "row[3].GrossCharge", r.GrossCharge, f64Ptr(500000.00))
-	assertF64PtrEq(t, "row[3].DiscountedCash", r.DiscountedCash, f64Ptr(250000.00))
-	assertStrPtrEq(t, "row[3].Modifiers", r.Modifiers, strPtr("26 59"))
+	// ── HEART TRANSPLANT / no payer, with modifiers ──────────────────
+	r = find("HEART TRANSPLANT WITH MCC", nil)
+	assertStrPtrEq(t, "HEART MSDRGCode", r.MSDRGCode, strPtr("001"))
+	assertStrPtrEq(t, "HEART PayerName", r.PayerName, nil)
+	assertStrPtrEq(t, "HEART PlanName", r.PlanName, nil)
+	assertF64PtrEq(t, "HEART GrossCharge", r.GrossCharge, f64Ptr(500000.00))
+	assertF64PtrEq(t, "HEART DiscountedCash", r.DiscountedCash, f64Ptr(250000.00))
+	assertStrPtrEq(t, "HEART Modifiers", r.Modifiers, strPtr("26 59"))
 
-	// ── Round-trip: CSV rows match parquet rows field by field ────────
+	// ── Round-trip: CSV rows match parquet rows (order-independent) ──
+	sortRowsByCPT(csvRows)
 	for i := range csvRows {
 		csv := csvRows[i]
 		pq := pqRows[i]
@@ -318,51 +329,52 @@ func TestCSVReaderWideToParquet(t *testing.T) {
 		}
 	}
 
-	// ── Row 0: X-RAY / Aetna ────────────────────────────────────────
-	r := pqRows[0]
-	if r.Description != "X-RAY CHEST" {
-		t.Errorf("row[0].Description = %q", r.Description)
+	// Parquet rows are sorted by cpt_code. Lookup by description+payer.
+	find := func(desc string, payer *string) *HospitalChargeRow {
+		for i := range pqRows {
+			r := &pqRows[i]
+			payerMatch := (payer == nil && r.PayerName == nil) ||
+				(payer != nil && r.PayerName != nil && *payer == *r.PayerName)
+			if r.Description == desc && payerMatch {
+				return r
+			}
+		}
+		t.Fatalf("row not found: desc=%q payer=%v", desc, payer)
+		return nil
 	}
+
+	// ── X-RAY / Aetna ───────────────────────────────────────────────
+	r := find("X-RAY CHEST", strPtr("Aetna"))
 	if r.Setting != "outpatient" {
-		t.Errorf("row[0].Setting = %q", r.Setting)
+		t.Errorf("XRAY/Aetna Setting = %q", r.Setting)
 	}
-	assertStrPtrEq(t, "row[0].CPTCode", r.CPTCode, strPtr("71046"))
-	assertF64PtrEq(t, "row[0].GrossCharge", r.GrossCharge, f64Ptr(250.00))
-	assertF64PtrEq(t, "row[0].DiscountedCash", r.DiscountedCash, f64Ptr(125.00))
-	// Wide format replaces underscores with spaces in payer/plan names
-	assertStrPtrEq(t, "row[0].PayerName", r.PayerName, strPtr("Aetna"))
-	assertStrPtrEq(t, "row[0].PlanName", r.PlanName, strPtr("PPO"))
-	assertF64PtrEq(t, "row[0].NegotiatedDollar", r.NegotiatedDollar, f64Ptr(150.00))
-	assertStrPtrEq(t, "row[0].Methodology", r.Methodology, strPtr("fee_schedule"))
+	assertStrPtrEq(t, "XRAY/Aetna CPTCode", r.CPTCode, strPtr("71046"))
+	assertF64PtrEq(t, "XRAY/Aetna GrossCharge", r.GrossCharge, f64Ptr(250.00))
+	assertF64PtrEq(t, "XRAY/Aetna DiscountedCash", r.DiscountedCash, f64Ptr(125.00))
+	assertStrPtrEq(t, "XRAY/Aetna PlanName", r.PlanName, strPtr("PPO"))
+	assertF64PtrEq(t, "XRAY/Aetna NegotiatedDollar", r.NegotiatedDollar, f64Ptr(150.00))
+	assertStrPtrEq(t, "XRAY/Aetna Methodology", r.Methodology, strPtr("fee_schedule"))
 
-	// ── Row 1: X-RAY / UHC ──────────────────────────────────────────
-	r = pqRows[1]
-	if r.Description != "X-RAY CHEST" {
-		t.Errorf("row[1].Description = %q", r.Description)
-	}
-	assertStrPtrEq(t, "row[1].PayerName", r.PayerName, strPtr("UHC"))
-	assertStrPtrEq(t, "row[1].PlanName", r.PlanName, strPtr("Choice Plus"))
-	assertF64PtrEq(t, "row[1].NegotiatedDollar", r.NegotiatedDollar, f64Ptr(175.00))
-	assertStrPtrEq(t, "row[1].Methodology", r.Methodology, strPtr("case_rate"))
-	// Same base charges as row 0
-	assertF64PtrEq(t, "row[1].GrossCharge", r.GrossCharge, f64Ptr(250.00))
+	// ── X-RAY / UHC ─────────────────────────────────────────────────
+	r = find("X-RAY CHEST", strPtr("UHC"))
+	assertStrPtrEq(t, "XRAY/UHC PlanName", r.PlanName, strPtr("Choice Plus"))
+	assertF64PtrEq(t, "XRAY/UHC NegotiatedDollar", r.NegotiatedDollar, f64Ptr(175.00))
+	assertStrPtrEq(t, "XRAY/UHC Methodology", r.Methodology, strPtr("case_rate"))
+	assertF64PtrEq(t, "XRAY/UHC GrossCharge", r.GrossCharge, f64Ptr(250.00))
 
-	// ── Row 2: MRI / Aetna only (UHC has no data) ───────────────────
-	r = pqRows[2]
-	if r.Description != "MRI BRAIN" {
-		t.Errorf("row[2].Description = %q", r.Description)
-	}
+	// ── MRI / Aetna only (UHC has no data) ──────────────────────────
+	r = find("MRI BRAIN", strPtr("Aetna"))
 	if r.Setting != "inpatient" {
-		t.Errorf("row[2].Setting = %q", r.Setting)
+		t.Errorf("MRI Setting = %q", r.Setting)
 	}
-	assertStrPtrEq(t, "row[2].CPTCode", r.CPTCode, strPtr("70553"))
-	assertStrPtrEq(t, "row[2].PayerName", r.PayerName, strPtr("Aetna"))
-	assertStrPtrEq(t, "row[2].PlanName", r.PlanName, strPtr("PPO"))
-	assertF64PtrEq(t, "row[2].NegotiatedDollar", r.NegotiatedDollar, f64Ptr(2200.00))
-	assertStrPtrEq(t, "row[2].Methodology", r.Methodology, strPtr("per_diem"))
-	assertF64PtrEq(t, "row[2].GrossCharge", r.GrossCharge, f64Ptr(3500.00))
+	assertStrPtrEq(t, "MRI CPTCode", r.CPTCode, strPtr("70553"))
+	assertStrPtrEq(t, "MRI PlanName", r.PlanName, strPtr("PPO"))
+	assertF64PtrEq(t, "MRI NegotiatedDollar", r.NegotiatedDollar, f64Ptr(2200.00))
+	assertStrPtrEq(t, "MRI Methodology", r.Methodology, strPtr("per_diem"))
+	assertF64PtrEq(t, "MRI GrossCharge", r.GrossCharge, f64Ptr(3500.00))
 
-	// ── Round-trip integrity ─────────────────────────────────────────
+	// ── Round-trip integrity (order-independent) ─────────────────────
+	sortRowsByCPT(csvRows)
 	for i := range csvRows {
 		csv := csvRows[i]
 		pq := pqRows[i]

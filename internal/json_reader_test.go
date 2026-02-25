@@ -9,6 +9,21 @@ import (
 	"github.com/parquet-go/parquet-go"
 )
 
+// findRow looks up a row by description and payer name (order-independent).
+func findRow(t *testing.T, rows []HospitalChargeRow, desc string, payer *string) *HospitalChargeRow {
+	t.Helper()
+	for i := range rows {
+		r := &rows[i]
+		payerMatch := (payer == nil && r.PayerName == nil) ||
+			(payer != nil && r.PayerName != nil && *payer == *r.PayerName)
+		if r.Description == desc && payerMatch {
+			return r
+		}
+	}
+	t.Fatalf("row not found: desc=%q payer=%v", desc, payer)
+	return nil
+}
+
 // jsonToParquet reads a JSON file via JSONReader, writes all rows to a parquet
 // file via ChargeWriter, and returns the parquet path and collected rows.
 func jsonToParquet(t *testing.T, jsonPath string) (string, []HospitalChargeRow) {
@@ -123,80 +138,62 @@ func TestJSONReaderV2ToParquet(t *testing.T) {
 		}
 	}
 
-	// ── Row 0: X-RAY / Aetna ────────────────────────────────────────
-	r := pqRows[0]
-	if r.Description != "X-RAY CHEST 2 VIEWS" {
-		t.Errorf("row[0].Description = %q", r.Description)
-	}
+	// ── X-RAY / Aetna ───────────────────────────────────────────────
+	r := findRow(t, pqRows, "X-RAY CHEST 2 VIEWS", strPtr("Aetna"))
 	if r.Setting != "outpatient" {
-		t.Errorf("row[0].Setting = %q", r.Setting)
+		t.Errorf("XRAY/Aetna Setting = %q", r.Setting)
 	}
-	assertStrPtrEq(t, "row[0].CPTCode", r.CPTCode, strPtr("71046"))
-	assertStrPtrEq(t, "row[0].RCCode", r.RCCode, strPtr("0324"))
-	// V2 gross_charges as comma-formatted string "1,250.00"
-	assertF64PtrEq(t, "row[0].GrossCharge", r.GrossCharge, f64Ptr(1250.00))
-	assertF64PtrEq(t, "row[0].DiscountedCash", r.DiscountedCash, f64Ptr(625.00))
-	assertF64PtrEq(t, "row[0].MinCharge", r.MinCharge, f64Ptr(400.00))
-	assertF64PtrEq(t, "row[0].MaxCharge", r.MaxCharge, f64Ptr(1800.00))
-	assertStrPtrEq(t, "row[0].Modifiers", r.Modifiers, strPtr("26|TC"))
-	assertStrPtrEq(t, "row[0].AdditionalGenericNotes", r.AdditionalGenericNotes, strPtr("Includes interpretation"))
-	assertStrPtrEq(t, "row[0].PayerName", r.PayerName, strPtr("Aetna"))
-	assertStrPtrEq(t, "row[0].PlanName", r.PlanName, strPtr("Aetna PPO"))
-	assertF64PtrEq(t, "row[0].NegotiatedDollar", r.NegotiatedDollar, f64Ptr(800.00))
-	assertStrPtrEq(t, "row[0].Methodology", r.Methodology, strPtr("fee_schedule"))
-	assertStrPtrEq(t, "row[0].AdditionalPayerNotes", r.AdditionalPayerNotes, strPtr("Network rate"))
+	assertStrPtrEq(t, "XRAY/Aetna CPTCode", r.CPTCode, strPtr("71046"))
+	assertStrPtrEq(t, "XRAY/Aetna RCCode", r.RCCode, strPtr("0324"))
+	assertF64PtrEq(t, "XRAY/Aetna GrossCharge", r.GrossCharge, f64Ptr(1250.00))
+	assertF64PtrEq(t, "XRAY/Aetna DiscountedCash", r.DiscountedCash, f64Ptr(625.00))
+	assertF64PtrEq(t, "XRAY/Aetna MinCharge", r.MinCharge, f64Ptr(400.00))
+	assertF64PtrEq(t, "XRAY/Aetna MaxCharge", r.MaxCharge, f64Ptr(1800.00))
+	assertStrPtrEq(t, "XRAY/Aetna Modifiers", r.Modifiers, strPtr("26|TC"))
+	assertStrPtrEq(t, "XRAY/Aetna GenericNotes", r.AdditionalGenericNotes, strPtr("Includes interpretation"))
+	assertStrPtrEq(t, "XRAY/Aetna PlanName", r.PlanName, strPtr("Aetna PPO"))
+	assertF64PtrEq(t, "XRAY/Aetna NegotiatedDollar", r.NegotiatedDollar, f64Ptr(800.00))
+	assertStrPtrEq(t, "XRAY/Aetna Methodology", r.Methodology, strPtr("fee_schedule"))
+	assertStrPtrEq(t, "XRAY/Aetna PayerNotes", r.AdditionalPayerNotes, strPtr("Network rate"))
 
-	// ── Row 1: X-RAY / Blue Cross (percentage + estimated) ──────────
-	r = pqRows[1]
-	if r.Description != "X-RAY CHEST 2 VIEWS" {
-		t.Errorf("row[1].Description = %q", r.Description)
-	}
-	assertStrPtrEq(t, "row[1].PayerName", r.PayerName, strPtr("Blue Cross"))
-	assertStrPtrEq(t, "row[1].PlanName", r.PlanName, strPtr("BC Standard"))
-	assertStrPtrEq(t, "row[1].Methodology", r.Methodology, strPtr("percent_of_total_billed_charges"))
-	assertF64PtrEq(t, "row[1].NegotiatedPercentage", r.NegotiatedPercentage, f64Ptr(75.5))
-	assertF64PtrEq(t, "row[1].EstimatedAmount", r.EstimatedAmount, f64Ptr(943.75))
-	assertF64PtrEq(t, "row[1].NegotiatedDollar", r.NegotiatedDollar, nil)
-	// Same base charges as row 0
-	assertF64PtrEq(t, "row[1].GrossCharge", r.GrossCharge, f64Ptr(1250.00))
-	assertStrPtrEq(t, "row[1].Modifiers", r.Modifiers, strPtr("26|TC"))
+	// ── X-RAY / Blue Cross (percentage + estimated) ──────────────────
+	r = findRow(t, pqRows, "X-RAY CHEST 2 VIEWS", strPtr("Blue Cross"))
+	assertStrPtrEq(t, "XRAY/BC PlanName", r.PlanName, strPtr("BC Standard"))
+	assertStrPtrEq(t, "XRAY/BC Methodology", r.Methodology, strPtr("percent_of_total_billed_charges"))
+	assertF64PtrEq(t, "XRAY/BC NegotiatedPercentage", r.NegotiatedPercentage, f64Ptr(75.5))
+	assertF64PtrEq(t, "XRAY/BC EstimatedAmount", r.EstimatedAmount, f64Ptr(943.75))
+	assertF64PtrEq(t, "XRAY/BC NegotiatedDollar", r.NegotiatedDollar, nil)
+	assertF64PtrEq(t, "XRAY/BC GrossCharge", r.GrossCharge, f64Ptr(1250.00))
+	assertStrPtrEq(t, "XRAY/BC Modifiers", r.Modifiers, strPtr("26|TC"))
 
-	// ── Row 2: IBUPROFEN / drug info + algorithm ─────────────────────
-	r = pqRows[2]
-	if r.Description != "IBUPROFEN 200MG TABLET" {
-		t.Errorf("row[2].Description = %q", r.Description)
-	}
+	// ── IBUPROFEN / drug info + algorithm ────────────────────────────
+	r = findRow(t, pqRows, "IBUPROFEN 200MG TABLET", strPtr("UnitedHealthcare"))
 	if r.Setting != "inpatient" {
-		t.Errorf("row[2].Setting = %q", r.Setting)
+		t.Errorf("IBU Setting = %q", r.Setting)
 	}
-	assertStrPtrEq(t, "row[2].NDCCode", r.NDCCode, strPtr("00573-0150-20"))
-	assertStrPtrEq(t, "row[2].HCPCSCode", r.HCPCSCode, strPtr("J3490"))
-	assertStrPtrEq(t, "row[2].CPTCode", r.CPTCode, nil)
-	assertF64PtrEq(t, "row[2].DrugUnitOfMeasurement", r.DrugUnitOfMeasurement, f64Ptr(200.0))
-	assertStrPtrEq(t, "row[2].DrugTypeOfMeasurement", r.DrugTypeOfMeasurement, strPtr("ME"))
-	assertF64PtrEq(t, "row[2].GrossCharge", r.GrossCharge, f64Ptr(12.50))
-	assertF64PtrEq(t, "row[2].DiscountedCash", r.DiscountedCash, f64Ptr(6.25))
-	assertStrPtrEq(t, "row[2].PayerName", r.PayerName, strPtr("UnitedHealthcare"))
-	assertStrPtrEq(t, "row[2].PlanName", r.PlanName, strPtr("UHC Choice Plus"))
-	assertF64PtrEq(t, "row[2].NegotiatedDollar", r.NegotiatedDollar, f64Ptr(8.00))
-	assertStrPtrEq(t, "row[2].Methodology", r.Methodology, strPtr("per_diem"))
-	assertStrPtrEq(t, "row[2].NegotiatedAlgorithm", r.NegotiatedAlgorithm, strPtr("per diem rate table v3"))
+	assertStrPtrEq(t, "IBU NDCCode", r.NDCCode, strPtr("00573-0150-20"))
+	assertStrPtrEq(t, "IBU HCPCSCode", r.HCPCSCode, strPtr("J3490"))
+	assertStrPtrEq(t, "IBU CPTCode", r.CPTCode, nil)
+	assertF64PtrEq(t, "IBU DrugUnit", r.DrugUnitOfMeasurement, f64Ptr(200.0))
+	assertStrPtrEq(t, "IBU DrugType", r.DrugTypeOfMeasurement, strPtr("ME"))
+	assertF64PtrEq(t, "IBU GrossCharge", r.GrossCharge, f64Ptr(12.50))
+	assertF64PtrEq(t, "IBU DiscountedCash", r.DiscountedCash, f64Ptr(6.25))
+	assertStrPtrEq(t, "IBU PlanName", r.PlanName, strPtr("UHC Choice Plus"))
+	assertF64PtrEq(t, "IBU NegotiatedDollar", r.NegotiatedDollar, f64Ptr(8.00))
+	assertStrPtrEq(t, "IBU Methodology", r.Methodology, strPtr("per_diem"))
+	assertStrPtrEq(t, "IBU Algorithm", r.NegotiatedAlgorithm, strPtr("per diem rate table v3"))
 
-	// ── Row 3: KNEE REPLACEMENT / no payer, gross_charges string ─────
-	r = pqRows[3]
-	if r.Description != "KNEE REPLACEMENT" {
-		t.Errorf("row[3].Description = %q", r.Description)
-	}
-	assertStrPtrEq(t, "row[3].MSDRGCode", r.MSDRGCode, strPtr("470"))
-	assertStrPtrEq(t, "row[3].PayerName", r.PayerName, nil)
-	assertStrPtrEq(t, "row[3].PlanName", r.PlanName, nil)
-	// V2 gross_charges as comma-formatted string "45,000.00"
-	assertF64PtrEq(t, "row[3].GrossCharge", r.GrossCharge, f64Ptr(45000.00))
-	assertF64PtrEq(t, "row[3].DiscountedCash", r.DiscountedCash, f64Ptr(22500.00))
-	assertF64PtrEq(t, "row[3].MinCharge", r.MinCharge, f64Ptr(20000.00))
-	assertF64PtrEq(t, "row[3].MaxCharge", r.MaxCharge, f64Ptr(65000.00))
+	// ── KNEE REPLACEMENT / no payer, gross_charges string ────────────
+	r = findRow(t, pqRows, "KNEE REPLACEMENT", nil)
+	assertStrPtrEq(t, "KNEE MSDRGCode", r.MSDRGCode, strPtr("470"))
+	assertStrPtrEq(t, "KNEE PayerName", r.PayerName, nil)
+	assertF64PtrEq(t, "KNEE GrossCharge", r.GrossCharge, f64Ptr(45000.00))
+	assertF64PtrEq(t, "KNEE DiscountedCash", r.DiscountedCash, f64Ptr(22500.00))
+	assertF64PtrEq(t, "KNEE MinCharge", r.MinCharge, f64Ptr(20000.00))
+	assertF64PtrEq(t, "KNEE MaxCharge", r.MaxCharge, f64Ptr(65000.00))
 
-	// ── Round-trip: JSON rows match parquet rows ─────────────────────
+	// ── Round-trip: JSON rows match parquet rows (order-independent) ─
+	sortRowsByCPT(jsonRows)
 	for i := range jsonRows {
 		j := jsonRows[i]
 		p := pqRows[i]
@@ -266,43 +263,35 @@ func TestJSONReaderV3ToParquet(t *testing.T) {
 		}
 	}
 
-	// ── Row 0: MRI BRAIN / Cigna ─────────────────────────────────────
-	r := pqRows[0]
-	if r.Description != "MRI BRAIN WITHOUT CONTRAST" {
-		t.Errorf("row[0].Description = %q", r.Description)
-	}
+	// ── MRI BRAIN / Cigna ────────────────────────────────────────────
+	r := findRow(t, pqRows, "MRI BRAIN WITHOUT CONTRAST", strPtr("Cigna"))
 	if r.Setting != "outpatient" {
-		t.Errorf("row[0].Setting = %q", r.Setting)
+		t.Errorf("MRI Setting = %q", r.Setting)
 	}
-	assertStrPtrEq(t, "row[0].CPTCode", r.CPTCode, strPtr("70551"))
-	// V3 uses gross_charge (number) instead of gross_charges (string)
-	assertF64PtrEq(t, "row[0].GrossCharge", r.GrossCharge, f64Ptr(3500.00))
-	assertF64PtrEq(t, "row[0].DiscountedCash", r.DiscountedCash, f64Ptr(1750.00))
-	assertF64PtrEq(t, "row[0].MinCharge", r.MinCharge, f64Ptr(1200.00))
-	assertF64PtrEq(t, "row[0].MaxCharge", r.MaxCharge, f64Ptr(4500.00))
-	assertStrPtrEq(t, "row[0].PayerName", r.PayerName, strPtr("Cigna"))
-	assertStrPtrEq(t, "row[0].PlanName", r.PlanName, strPtr("Cigna Open Access"))
-	assertF64PtrEq(t, "row[0].NegotiatedDollar", r.NegotiatedDollar, f64Ptr(2200.00))
-	assertStrPtrEq(t, "row[0].Methodology", r.Methodology, strPtr("case_rate"))
+	assertStrPtrEq(t, "MRI CPTCode", r.CPTCode, strPtr("70551"))
+	assertF64PtrEq(t, "MRI GrossCharge", r.GrossCharge, f64Ptr(3500.00))
+	assertF64PtrEq(t, "MRI DiscountedCash", r.DiscountedCash, f64Ptr(1750.00))
+	assertF64PtrEq(t, "MRI MinCharge", r.MinCharge, f64Ptr(1200.00))
+	assertF64PtrEq(t, "MRI MaxCharge", r.MaxCharge, f64Ptr(4500.00))
+	assertStrPtrEq(t, "MRI PlanName", r.PlanName, strPtr("Cigna Open Access"))
+	assertF64PtrEq(t, "MRI NegotiatedDollar", r.NegotiatedDollar, f64Ptr(2200.00))
+	assertStrPtrEq(t, "MRI Methodology", r.Methodology, strPtr("case_rate"))
 
-	// ── Row 1: ER VISIT / no payer ───────────────────────────────────
-	r = pqRows[1]
-	if r.Description != "EMERGENCY ROOM VISIT LEVEL 3" {
-		t.Errorf("row[1].Description = %q", r.Description)
-	}
+	// ── ER VISIT / no payer ──────────────────────────────────────────
+	r = findRow(t, pqRows, "EMERGENCY ROOM VISIT LEVEL 3", nil)
 	if r.Setting != "outpatient" {
-		t.Errorf("row[1].Setting = %q", r.Setting)
+		t.Errorf("ER Setting = %q", r.Setting)
 	}
-	assertStrPtrEq(t, "row[1].CPTCode", r.CPTCode, strPtr("99283"))
-	assertStrPtrEq(t, "row[1].RCCode", r.RCCode, strPtr("0450"))
-	assertF64PtrEq(t, "row[1].GrossCharge", r.GrossCharge, f64Ptr(950.00))
-	assertF64PtrEq(t, "row[1].DiscountedCash", r.DiscountedCash, f64Ptr(475.00))
-	assertF64PtrEq(t, "row[1].MinCharge", r.MinCharge, nil)
-	assertF64PtrEq(t, "row[1].MaxCharge", r.MaxCharge, nil)
-	assertStrPtrEq(t, "row[1].PayerName", r.PayerName, nil)
-	assertStrPtrEq(t, "row[1].PlanName", r.PlanName, nil)
+	assertStrPtrEq(t, "ER CPTCode", r.CPTCode, strPtr("99283"))
+	assertStrPtrEq(t, "ER RCCode", r.RCCode, strPtr("0450"))
+	assertF64PtrEq(t, "ER GrossCharge", r.GrossCharge, f64Ptr(950.00))
+	assertF64PtrEq(t, "ER DiscountedCash", r.DiscountedCash, f64Ptr(475.00))
+	assertF64PtrEq(t, "ER MinCharge", r.MinCharge, nil)
+	assertF64PtrEq(t, "ER MaxCharge", r.MaxCharge, nil)
+	assertStrPtrEq(t, "ER PayerName", r.PayerName, nil)
 
-	// ── Round-trip integrity ─────────────────────────────────────────
+	// ── Round-trip integrity (order-independent) ─────────────────────
+	sortRowsByCPT(jsonRows)
 	for i := range jsonRows {
 		j := jsonRows[i]
 		p := pqRows[i]
