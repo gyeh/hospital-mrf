@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"pricetool/internal"
 	"strings"
@@ -36,11 +39,29 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Usage:\n")
 		fmt.Fprintf(os.Stderr, "  CSV/JSON → Parquet: hospital_loader -file input.csv [-out output.parquet] [-batch N]\n")
 		fmt.Fprintf(os.Stderr, "                      hospital_loader -file input.json [-out output.parquet] [-batch N]\n")
+		fmt.Fprintf(os.Stderr, "                      hospital_loader -file https://example.com/charges.csv [-out output.parquet]\n")
 		os.Exit(1)
 	}
 
+	// If input is a URL, download to a temp file first.
+	inputDisplay := *inputFile
+	if isURL(*inputFile) {
+		localPath, cleanup, err := downloadURL(*inputFile)
+		if err != nil {
+			log.Fatalf("download %s: %v", *inputFile, err)
+		}
+		defer cleanup()
+		*inputFile = localPath
+	}
+
 	if *outputFile == "" {
-		base := strings.TrimSuffix(filepath.Base(*inputFile), filepath.Ext(*inputFile))
+		base := strings.TrimSuffix(filepath.Base(inputDisplay), filepath.Ext(inputDisplay))
+		// For URLs, extract filename from the URL path
+		if isURL(inputDisplay) {
+			if u, err := url.Parse(inputDisplay); err == nil {
+				base = strings.TrimSuffix(path.Base(u.Path), path.Ext(u.Path))
+			}
+		}
 		*outputFile = base + ".parquet"
 	}
 
@@ -66,7 +87,7 @@ func main() {
 	}
 
 	displayOut := *outputFile
-	if err := convert(*inputFile, localOut, displayOut, *batchSize, *skipPayerCharges); err != nil {
+	if err := convert(*inputFile, inputDisplay, localOut, displayOut, *batchSize, *skipPayerCharges); err != nil {
 		log.Fatal(err)
 	}
 
@@ -77,7 +98,7 @@ func main() {
 	}
 }
 
-func convert(inputPath, outputPath, displayPath string, batchSize int, skipPayerCharges bool) error {
+func convert(inputPath, inputDisplay, outputPath, displayPath string, batchSize int, skipPayerCharges bool) error {
 	start := time.Now()
 
 	isJSON := strings.EqualFold(filepath.Ext(inputPath), ".json")
@@ -115,7 +136,7 @@ func convert(inputPath, outputPath, displayPath string, batchSize int, skipPayer
 		fileSize = fi.Size()
 	}
 
-	fmt.Printf("Input:   %s\n", inputPath)
+	fmt.Printf("Input:   %s\n", inputDisplay)
 	fmt.Printf("Output:  %s\n", displayPath)
 	fmt.Printf("Format:  %s\n", reader.Format())
 	if csvReader != nil && csvReader.Format() == "wide" {
@@ -247,4 +268,72 @@ func uploadToS3(ctx context.Context, localPath, s3URI string) error {
 
 	fmt.Printf("Uploaded in %s\n", time.Since(start).Round(time.Millisecond))
 	return nil
+}
+
+func isURL(s string) bool {
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
+// downloadURL downloads a URL to a temp file, preserving the original file
+// extension so format detection works. Returns the temp file path and a
+// cleanup function that removes the temp file.
+func downloadURL(rawURL string) (localPath string, cleanup func(), err error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", nil, fmt.Errorf("parse URL: %w", err)
+	}
+
+	ext := path.Ext(u.Path)
+	if ext == "" {
+		ext = ".csv" // default assumption
+	}
+
+	f, err := os.CreateTemp("", "hospital-loader-*"+ext)
+	if err != nil {
+		return "", nil, fmt.Errorf("create temp file: %w", err)
+	}
+	tmpPath := f.Name()
+
+	cleanupFn := func() { os.Remove(tmpPath) }
+
+	// Also clean up on signals.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		os.Remove(tmpPath)
+		os.Exit(1)
+	}()
+
+	fmt.Printf("Downloading %s ...\n", rawURL)
+	start := time.Now()
+
+	resp, err := http.Get(rawURL)
+	if err != nil {
+		f.Close()
+		cleanupFn()
+		return "", nil, fmt.Errorf("HTTP GET: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		f.Close()
+		cleanupFn()
+		return "", nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
+	}
+
+	n, err := io.Copy(f, resp.Body)
+	if err != nil {
+		f.Close()
+		cleanupFn()
+		return "", nil, fmt.Errorf("download: %w", err)
+	}
+
+	if err := f.Close(); err != nil {
+		cleanupFn()
+		return "", nil, fmt.Errorf("close temp file: %w", err)
+	}
+
+	fmt.Printf("Downloaded %.1f MB in %s\n\n", float64(n)/1024/1024, time.Since(start).Round(time.Millisecond))
+	return tmpPath, cleanupFn, nil
 }
