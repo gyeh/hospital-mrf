@@ -1,0 +1,250 @@
+generated_at: '2026-01-22'
+scope: Hospitals with NYS Health Profiles directory entries located in NYC boroughs
+  (Manhattan/Bronx/Brooklyn/Queens/Staten Island). Each row intended to map to a unique
+  Hospital Price Transparency machine-readable file (MRF) landing page; some systems
+  may publish a single MRF covering multiple campuses.
+hospitals:
+- name: Bellevue Hospital Center
+  address: 462 First Avenue, New York, NY 10016
+  price_transparency_landing_page: https://www.nychealthandhospitals.org/your-healthcare-costs/
+  estimated_beds: 898
+- name: BronxCare Hospital Center
+  address: 1276 Fulton Avenue, Bronx, NY 10456
+  price_transparency_landing_page: https://www.bronxcare.org/about-us/paying-for-care/charges
+  estimated_beds: 415
+- name: Brookdale Hospital Medical Center
+  address: 1 Brookdale Plaza, Brooklyn, NY 11212
+  price_transparency_landing_page: https://onebrooklynhealth.org/financial-assistance
+  estimated_beds: null
+- name: Calvary Hospital (Brooklyn Campus)
+  address: 150 55th Street, Brooklyn, NY 11220
+  price_transparency_landing_page: https://www.calvaryhospital.org/patients-families/patient-financial-information/
+  estimated_beds: null
+- name: Calvary Hospital Inc (Bronx Campus)
+  address: 1740-70 Eastchester Road, Bronx, NY 10461
+  price_transparency_landing_page: https://www.calvaryhospital.org/patients-families/patient-financial-information/
+  estimated_beds: null
+- name: David H. Koch Center For Cancer Care (MSK)
+  address: 530 East 74th Street, New York, NY 10021
+  price_transparency_landing_page: https://www.mskcc.org/insurance-assistance/understanding-cost-your-care-msk/download
+  estimated_beds: null
+- name: Elmhurst Hospital Center
+  address: 79-01 Broadway, Elmhurst, NY 11373
+  price_transparency_landing_page: https://www.nychealthandhospitals.org/your-healthcare-costs/
+  estimated_beds: 545
+- name: Flushing Hospital Medical Center
+  address: 45th Avenue & Parsons Blvd, Flushing, NY 11355
+  price_transparency_landing_page: https://flushinghospital.org/paying-for-your-care/price-transparency/
+  estimated_beds: 293
+- name: Harlem Hospital Center
+  address: 506 Lenox Avenue, New York, NY 10037
+  price_transparency_landing_page: https://www.nychealthandhospitals.org/your-healthcare-costs/
+  estimated_beds: 268
+- name: Henry J. Carter Specialty Hospital
+  address: 1752 Park Avenue, New York, NY 10035
+  price_transparency_landing_page: https://www.nychealthandhospitals.org/your-healthcare-costs/
+  estimated_beds: null
+- name: Hospital for Special Surgery
+  address: 535 E 70th Street, New York, NY 10021
+  price_transparency_landing_page: https://www.hss.edu/patient-care/paying-for-care/price-transparency
+  estimated_beds: 215
+- name: Interfaith Medical Center
+  address: 1545 Atlantic Avenue, Brooklyn, NY 11213
+  price_transparency_landing_page: https://onebrooklynhealth.org/financial-assistance
+  estimated_beds: 287
+- name: Jacobi Medical Center
+  address: 1400 Pelham Parkway, Bronx, NY 10461
+  price_transparency_landing_page: https://www.nychealthandhospitals.org/your-healthcare-costs/
+  estimated_beds: 457
+- name: Jamaica Hospital Medical Center
+  address: 89th Avenue & Van Wyck Expressway, Jamaica, NY 11418
+  price_transparency_landing_page: https://jamaicahospital.org/hospital-disclosure-statement/price-transparency/
+  estimated_beds: 384
+- name: Kings County Hospital Center
+  address: 451 Clarkson Avenue, Brooklyn, NY 11203
+  price_transparency_landing_page: https://www.nychealthandhospitals.org/your-healthcare-costs/
+  estimated_beds: 624
+- name: Kingsbrook Jewish Medical Village
+  address: 585 Schenectady Avenue, Brooklyn, NY 11203
+  price_transparency_landing_page: https://onebrooklynhealth.org/financial-assistance
+  estimated_beds: null
+- name: Lenox Hill Hospital
+  address: 100 East 77th Street, New York, NY 10021
+  price_transparency_landing_page: https://www.northwell.edu/billing-and-insurance/price-estimator-tools
+  estimated_beds: 626
+- name: Lincoln Medical & Mental Health Center
+  address: 234 East 149th Street, Bronx, NY 10451
+  price_transparency_landing_page: https://www.nychealthandhospitals.org/your-healthcare-costs/
+  estimated_beds: 362
+- name: Long Island Jewish Forest Hills
+  address: 102-01 66th Road, Forest Hills, NY 11375
+  price_transparency_landing_page: https://www.northwell.edu/billing-and-insurance/price-estimator-tools
+  estimated_beds: null
+- name: Maimonides Medical Center
+  address: 4802 Tenth Avenue, Brooklyn, NY 11219
+  price_transparency_landing_page: https://maimo.org/patients-visitors/standard-hospital-charges/
+  estimated_beds: 711
+- name: Maimonides Midwood Community Hospital
+  address: 2525 Kings Highway, Brooklyn, NY 11229
+  price_transparency_landing_page: https://maimo.org/patients-visitors/standard-hospital-charges/
+  estimated_beds: null
+- name: Memorial Hospital for Cancer and Allied Diseases (MSK)
+  address: 1275 York Avenue, New York, NY 10065
+  price_transparency_landing_page: https://www.mskcc.org/insurance-assistance/understanding-cost-your-care-msk/download
+  estimated_beds: null
+- name: Metropolitan Hospital Center
+  address: 1901 First Avenue, New York, NY 10029
+  price_transparency_landing_page: https://www.nychealthandhospitals.org/your-healthcare-costs/
+  estimated_beds: 338
+- name: Montefiore Med Center - Jack D. Weiler Hospital of A. Einstein College Division
+  address: 1825 Eastchester Road, Bronx, NY 10461
+  price_transparency_landing_page: https://montefioreeinstein.org/patient-care/patients-visitors/billing-insurance/paying-for-your-care
+  estimated_beds: null
+- name: Montefiore Medical Center - Henry & Lucy Moses Division
+  address: 111 East 210th Street, Bronx, NY 10467
+  price_transparency_landing_page: https://montefioreeinstein.org/patient-care/patients-visitors/billing-insurance/paying-for-your-care
+  estimated_beds: 816
+- name: Montefiore Medical Center - Montefiore Westchester Square
+  address: 2475 St. Raymond Avenue, Bronx, NY 10461
+  price_transparency_landing_page: https://montefioreeinstein.org/patient-care/patients-visitors/billing-insurance/paying-for-your-care
+  estimated_beds: null
+- name: Montefiore Medical Center - Wakefield Hospital
+  address: 600 East 233rd Street, Bronx, NY 10466
+  price_transparency_landing_page: https://montefioreeinstein.org/patient-care/patients-visitors/billing-insurance/paying-for-your-care
+  estimated_beds: null
+- name: Mount Sinai - Behavioral Health Center
+  address: 45 Rivington Street, New York, NY 10002
+  price_transparency_landing_page: https://www.mountsinai.org/about/insurance/price-transparency
+  estimated_beds: null
+- name: Mount Sinai Beth Israel
+  address: First Ave at 16th Street, New York, NY 10003
+  price_transparency_landing_page: https://www.mountsinai.org/about/insurance/price-transparency
+  estimated_beds: null
+- name: Mount Sinai Brooklyn
+  address: 3201 Kings Highway, Brooklyn, NY 11234
+  price_transparency_landing_page: https://www.mountsinai.org/about/insurance/price-transparency
+  estimated_beds: 212
+- name: Mount Sinai Hospital
+  address: One Gustave L Levy Place, New York, NY 10029
+  price_transparency_landing_page: https://www.mountsinai.org/about/insurance/price-transparency
+  estimated_beds: 1127
+- name: Mount Sinai Morningside
+  address: 1111 Amsterdam Avenue, New York, NY 10025
+  price_transparency_landing_page: https://www.mountsinai.org/about/insurance/price-transparency
+  estimated_beds: 501
+- name: Mount Sinai Queens
+  address: 25-10 30th Avenue, Long Island City, NY 11102
+  price_transparency_landing_page: https://www.mountsinai.org/about/insurance/price-transparency
+  estimated_beds: null
+- name: Mount Sinai West
+  address: 1000 10th Avenue, New York, NY 10019
+  price_transparency_landing_page: https://www.mountsinai.org/about/insurance/price-transparency
+  estimated_beds: 514
+- name: New York Eye and Ear Infirmary of Mount Sinai
+  address: 310 East 14th Street, New York, NY 10003
+  price_transparency_landing_page: https://www.mountsinai.org/about/insurance/price-transparency
+  estimated_beds: null
+- name: NewYork-Presbyterian Brooklyn Methodist Hospital
+  address: 506 Sixth Street, Brooklyn, NY 11215
+  price_transparency_landing_page: https://www.nyp.org/patients-visitors/paying-for-care/hospital-price-transparency
+  estimated_beds: 577
+- name: NewYork-Presbyterian David H. Koch Center
+  address: 1283 York Avenue, New York, NY 10065
+  price_transparency_landing_page: https://www.nyp.org/patients-visitors/paying-for-care/hospital-price-transparency
+  estimated_beds: null
+- name: NewYork-Presbyterian Hospital - Allen Hospital
+  address: 5141 Broadway, New York, NY 10034
+  price_transparency_landing_page: https://www.nyp.org/patients-visitors/paying-for-care/hospital-price-transparency
+  estimated_beds: 196
+- name: NewYork-Presbyterian Hospital - Columbia Presbyterian Center
+  address: 622 West 168th Street, New York, NY 10032
+  price_transparency_landing_page: https://www.nyp.org/patients-visitors/paying-for-care/hospital-price-transparency
+  estimated_beds: 1022
+- name: NewYork-Presbyterian Hospital - New York Weill Cornell Center
+  address: 525 East 68th Street, New York, NY 10021
+  price_transparency_landing_page: https://www.nyp.org/patients-visitors/paying-for-care/hospital-price-transparency
+  estimated_beds: 744
+- name: NewYork-Presbyterian/Lower Manhattan Hospital
+  address: 170 William Street, New York, NY 10038
+  price_transparency_landing_page: https://www.nyp.org/patients-visitors/paying-for-care/hospital-price-transparency
+  estimated_beds: 180
+- name: NewYork-Presbyterian/Queens
+  address: 56-45 Main Street, Flushing, NY 11355
+  price_transparency_landing_page: https://www.nyp.org/patients-visitors/paying-for-care/hospital-price-transparency
+  estimated_beds: 535
+- name: North Central Bronx Hospital
+  address: 3424 Kossuth Avenue & 210th Street, Bronx, NY 10467
+  price_transparency_landing_page: https://www.nychealthandhospitals.org/your-healthcare-costs/
+  estimated_beds: 213
+- name: Northwell Greenwich Village Hospital
+  address: 30 Seventh Avenue, New York, NY 10011
+  price_transparency_landing_page: https://www.northwell.edu/billing-and-insurance/price-estimator-tools
+  estimated_beds: null
+- name: NYU Langone Hospital - Joseph S. and Diane H. Steinberg Ambulatory Care Center
+  address: 70 Atlantic Avenue, Brooklyn, NY 11201
+  price_transparency_landing_page: https://med.nyu.edu/standard-charges/
+  estimated_beds: null
+- name: NYU Langone Hospital-Brooklyn
+  address: 150 55th Street, Brooklyn, NY 11220
+  price_transparency_landing_page: https://med.nyu.edu/standard-charges/
+  estimated_beds: 444
+- name: NYU Langone Hospitals
+  address: 550 First Avenue, New York, NY 10016
+  price_transparency_landing_page: https://med.nyu.edu/standard-charges/
+  estimated_beds: 813
+- name: NYU Langone Orthopedic Hospital
+  address: 301 East 17th Street, New York, NY 10003
+  price_transparency_landing_page: https://med.nyu.edu/standard-charges/
+  estimated_beds: null
+- name: Queens Hospital Center
+  address: 82-68 164th Street, Jamaica, NY 11432
+  price_transparency_landing_page: https://www.nychealthandhospitals.org/your-healthcare-costs/
+  estimated_beds: 269
+- name: Richmond University Medical Center
+  address: 355 Bard Avenue, Staten Island, NY 10310
+  price_transparency_landing_page: https://rumcsi.org/patients-visitors/billing-and-insurance/price-transparency/
+  estimated_beds: null
+- name: Rockefeller University Hospital
+  address: 1230 York Avenue, New York, NY 10021
+  price_transparency_landing_page: null
+  estimated_beds: null
+- name: RUMC-Bayley Seton
+  address: 75 Vanderbilt Avenue, Staten Island, NY 10304
+  price_transparency_landing_page: https://rumcsi.org/patients-visitors/billing-and-insurance/price-transparency/
+  estimated_beds: null
+- name: SBH Health System
+  address: 4422 Third Avenue, Bronx, NY 10457
+  price_transparency_landing_page: https://www.sbhny.org/financial-services/
+  estimated_beds: 422
+- name: South Brooklyn Health
+  address: 2601 Ocean Parkway, Brooklyn, NY 11235
+  price_transparency_landing_page: https://www.nychealthandhospitals.org/your-healthcare-costs/
+  estimated_beds: 351
+- name: St Johns Episcopal Hospital So Shore
+  address: 327 Beach 19th Street, Far Rockaway, NY 11691
+  price_transparency_landing_page: null
+  estimated_beds: 252
+- name: Staten Island University Hosp-North
+  address: 475 Seaview Avenue, Staten Island, NY 10305
+  price_transparency_landing_page: https://www.northwell.edu/billing-and-insurance/price-estimator-tools
+  estimated_beds: 487
+- name: Staten Island University Hospital Prince's Bay
+  address: 375 Seguine Avenue, Staten Island, NY 10309
+  price_transparency_landing_page: https://www.northwell.edu/billing-and-insurance/price-estimator-tools
+  estimated_beds: 172
+- name: SUNY Downstate University Hospital of Brooklyn
+  address: 445 Lenox Road, Brooklyn, NY 11203
+  price_transparency_landing_page: https://www.downstate.edu/patient-care/patient-family-support/insurance-billing/hospital-charges.html
+  estimated_beds: 342
+- name: The Brooklyn Hospital Center - Downtown Campus
+  address: 121 DeKalb Avenue, Brooklyn, NY 11201
+  price_transparency_landing_page: https://www.tbh.org/visitor-information/billing/price-transparency
+  estimated_beds: 464
+- name: Woodhull Medical & Mental Health Center
+  address: 760 Broadway, Brooklyn, NY 11206
+  price_transparency_landing_page: https://www.nychealthandhospitals.org/your-healthcare-costs/
+  estimated_beds: null
+- name: Wyckoff Heights Medical Center
+  address: 374 Stockholm Street, Brooklyn, NY 11237
+  price_transparency_landing_page: https://whmcny.org/billing-payment/
+  estimated_beds: null
