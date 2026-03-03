@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"context"
 	"encoding/json"
 	"flag"
@@ -386,7 +387,16 @@ func downloadURL(rawURL string) (localPath string, cleanup func(), err error) {
 	fmt.Printf("Downloading %s ...\n", rawURL)
 	start := time.Now()
 
-	resp, err := http.Get(rawURL)
+	req, err := http.NewRequest("GET", rawURL, nil)
+	if err != nil {
+		f.Close()
+		cleanupFn()
+		return "", nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "*/*")
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		f.Close()
 		cleanupFn()
@@ -413,5 +423,80 @@ func downloadURL(rawURL string) (localPath string, cleanup func(), err error) {
 	}
 
 	fmt.Printf("Downloaded %.1f MB in %s\n\n", float64(n)/1024/1024, time.Since(start).Round(time.Millisecond))
+
+	// If the downloaded file is a zip, extract the first CSV/JSON from it.
+	if strings.HasSuffix(strings.ToLower(tmpPath), ".zip") {
+		extracted, err := extractZip(tmpPath)
+		if err != nil {
+			cleanupFn()
+			return "", nil, fmt.Errorf("extract zip: %w", err)
+		}
+		// Clean up the zip file, return the extracted file instead.
+		os.Remove(tmpPath)
+		extractedCleanup := func() { os.Remove(extracted) }
+		fmt.Printf("Extracted %s (%.1f MB)\n\n", filepath.Base(extracted), float64(fileSize(extracted))/1024/1024)
+		return extracted, extractedCleanup, nil
+	}
+
 	return tmpPath, cleanupFn, nil
+}
+
+// extractZip opens a zip file and extracts the first CSV or JSON file to a
+// temp file. Returns the path to the extracted file.
+func extractZip(zipPath string) (string, error) {
+	r, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return "", fmt.Errorf("open zip: %w", err)
+	}
+	defer r.Close()
+
+	// Find first CSV or JSON file in the archive.
+	var target *zip.File
+	for _, f := range r.File {
+		lower := strings.ToLower(f.Name)
+		if strings.HasSuffix(lower, ".csv") || strings.HasSuffix(lower, ".json") {
+			target = f
+			break
+		}
+	}
+	if target == nil {
+		// Fall back to first file.
+		if len(r.File) == 0 {
+			return "", fmt.Errorf("empty zip archive")
+		}
+		target = r.File[0]
+	}
+
+	ext := filepath.Ext(target.Name)
+	if ext == "" {
+		ext = ".csv"
+	}
+
+	rc, err := target.Open()
+	if err != nil {
+		return "", fmt.Errorf("open %s in zip: %w", target.Name, err)
+	}
+	defer rc.Close()
+
+	tmp, err := os.CreateTemp("", "hospital-loader-*"+ext)
+	if err != nil {
+		return "", fmt.Errorf("create temp file: %w", err)
+	}
+
+	if _, err := io.Copy(tmp, rc); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return "", fmt.Errorf("extract %s: %w", target.Name, err)
+	}
+	tmp.Close()
+
+	return tmp.Name(), nil
+}
+
+func fileSize(path string) int64 {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	return fi.Size()
 }
