@@ -28,6 +28,9 @@ type hospitalMeta struct {
 	version                   string
 	hospitalLocation          string
 	hospitalAddress           string
+	hospitalLocations         []string
+	hospitalAddresses         []string
+	type2NPIs                 []string
 	licenseNumber             *string
 	licenseState              *string
 	affirmation               bool
@@ -175,8 +178,27 @@ func (r *CSVReader) parseHeaderMeta(headerRow, valueRow []string) {
 			r.meta.version = val
 		case strings.EqualFold(col, "hospital_location"):
 			r.meta.hospitalLocation = val
+			if val != "" {
+				r.meta.hospitalLocations = strings.Split(val, "|")
+				for i := range r.meta.hospitalLocations {
+					r.meta.hospitalLocations[i] = strings.TrimSpace(r.meta.hospitalLocations[i])
+				}
+			}
 		case strings.EqualFold(col, "hospital_address"):
 			r.meta.hospitalAddress = val
+			if val != "" {
+				r.meta.hospitalAddresses = strings.Split(val, "|")
+				for i := range r.meta.hospitalAddresses {
+					r.meta.hospitalAddresses[i] = strings.TrimSpace(r.meta.hospitalAddresses[i])
+				}
+			}
+		case strings.EqualFold(col, "type_2_npi"):
+			if val != "" {
+				r.meta.type2NPIs = strings.Split(val, "|")
+				for i := range r.meta.type2NPIs {
+					r.meta.type2NPIs[i] = strings.TrimSpace(r.meta.type2NPIs[i])
+				}
+			}
 		case strings.HasPrefix(strings.ToLower(col), "license_number|"):
 			parts := strings.SplitN(col, "|", 2)
 			if len(parts) == 2 && r.meta.licenseState == nil {
@@ -462,6 +484,20 @@ func (r *CSVReader) RowNum() int64 {
 // PayerPlanCount returns the number of payer/plan combinations (Wide only).
 func (r *CSVReader) PayerPlanCount() int {
 	return len(r.payerPlans)
+}
+
+// Meta returns the hospital metadata parsed from the CSV header rows.
+func (r *CSVReader) Meta() RunMeta {
+	return RunMeta{
+		HospitalName:      r.meta.hospitalName,
+		LocationNames:     r.meta.hospitalLocations,
+		HospitalAddresses: r.meta.hospitalAddresses,
+		LicenseNumber:     r.meta.licenseNumber,
+		LicenseState:      r.meta.licenseState,
+		Type2NPIs:         r.meta.type2NPIs,
+		LastUpdatedOn:     r.meta.lastUpdatedOn,
+		Version:           r.meta.version,
+	}
 }
 
 func (r *CSVReader) Close() error {

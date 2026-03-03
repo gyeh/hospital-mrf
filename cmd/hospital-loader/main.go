@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -28,11 +29,30 @@ type chargeReader interface {
 	Close() error
 }
 
+type logEntry struct {
+	Success           bool     `json:"success"`
+	InputFormat       string   `json:"input_format"`
+	URL               string   `json:"url"`
+	StartTime         string   `json:"start_time"`
+	DurationSeconds   float64  `json:"duration_seconds"`
+	Error             string   `json:"error,omitempty"`
+	OutputS3Location  string   `json:"output_s3_location,omitempty"`
+	HospitalName      string   `json:"hospital_name"`
+	LocationNames     []string `json:"location_names"`
+	HospitalAddresses []string `json:"hospital_addresses"`
+	LicenseNumber     *string  `json:"license_number"`
+	LicenseState      *string  `json:"license_state"`
+	Type2NPIs         []string `json:"type_2_npis"`
+	LastUpdatedOn     string   `json:"last_updated_on"`
+	SchemaVersion     string   `json:"schema_version"`
+}
+
 func main() {
-	inputFile := flag.String("file", "", "Input file (CSV/JSON for Parquet mode, Parquet for PG mode)")
+	inputFile := flag.String("file", "", "Standard charges file (URL accepted)")
 	outputFile := flag.String("out", "", "Output Parquet file")
 	batchSize := flag.Int("batch", 10000, "Batch size (default: 10000 for Parquet)")
 	skipPayerCharges := flag.Bool("skip-payer-charges", true, "Skip parsing/uploading payer_charges (default: true)")
+	logFile := flag.String("log", "hospital-loader-log.jsonl", "JSONL log file path")
 	flag.Parse()
 
 	if *inputFile == "" {
@@ -42,6 +62,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "                      hospital_loader -file https://example.com/charges.csv [-out output.parquet]\n")
 		os.Exit(1)
 	}
+
+	startTime := time.Now()
 
 	// If input is a URL, download to a temp file first.
 	inputDisplay := *inputFile
@@ -87,19 +109,54 @@ func main() {
 	}
 
 	displayOut := *outputFile
-	if err := convert(*inputFile, inputDisplay, localOut, displayOut, *batchSize, *skipPayerCharges); err != nil {
-		log.Fatal(err)
-	}
+	meta, convertErr := convert(*inputFile, inputDisplay, localOut, displayOut, *batchSize, *skipPayerCharges)
 
-	if s3Dest != "" {
+	if s3Dest != "" && convertErr == nil {
 		if err := uploadToS3(context.Background(), localOut, s3Dest); err != nil {
 			log.Fatal(err)
 		}
 	}
+
+	// Write JSONL log entry
+	inputFormat := "csv"
+	if strings.EqualFold(filepath.Ext(*inputFile), ".json") {
+		inputFormat = "json"
+	}
+
+	entry := logEntry{
+		Success:           convertErr == nil,
+		InputFormat:       inputFormat,
+		URL:               inputDisplay,
+		StartTime:         startTime.Format(time.RFC3339),
+		DurationSeconds:   time.Since(startTime).Seconds(),
+		HospitalName:      meta.HospitalName,
+		LocationNames:     meta.LocationNames,
+		HospitalAddresses: meta.HospitalAddresses,
+		LicenseNumber:     meta.LicenseNumber,
+		LicenseState:      meta.LicenseState,
+		Type2NPIs:         meta.Type2NPIs,
+		LastUpdatedOn:     meta.LastUpdatedOn,
+		SchemaVersion:     meta.Version,
+	}
+	if convertErr != nil {
+		entry.Error = convertErr.Error()
+	}
+	if s3Dest != "" {
+		entry.OutputS3Location = s3Dest
+	}
+
+	if err := appendLogEntry(*logFile, &entry); err != nil {
+		log.Printf("warning: failed to write log entry: %v", err)
+	}
+
+	if convertErr != nil {
+		log.Fatal(convertErr)
+	}
 }
 
-func convert(inputPath, inputDisplay, outputPath, displayPath string, batchSize int, skipPayerCharges bool) error {
+func convert(inputPath, inputDisplay, outputPath, displayPath string, batchSize int, skipPayerCharges bool) (internal.RunMeta, error) {
 	start := time.Now()
+	var meta internal.RunMeta
 
 	isJSON := strings.EqualFold(filepath.Ext(inputPath), ".json")
 
@@ -111,23 +168,25 @@ func convert(inputPath, inputDisplay, outputPath, displayPath string, batchSize 
 	if isJSON {
 		jsonReader, err = internal.NewJSONReader(inputPath)
 		if err != nil {
-			return fmt.Errorf("open JSON: %w", err)
+			return meta, fmt.Errorf("open JSON: %w", err)
 		}
 		jsonReader.SkipPayerCharges = skipPayerCharges
 		reader = jsonReader
+		meta = jsonReader.Meta()
 	} else {
 		csvReader, err = internal.NewCSVReader(inputPath)
 		if err != nil {
-			return fmt.Errorf("open CSV: %w", err)
+			return meta, fmt.Errorf("open CSV: %w", err)
 		}
 		csvReader.SkipPayerCharges = skipPayerCharges
 		reader = csvReader
+		meta = csvReader.Meta()
 	}
 	defer reader.Close()
 
 	writer, err := internal.NewChargeWriter(outputPath)
 	if err != nil {
-		return fmt.Errorf("create Parquet: %w", err)
+		return meta, fmt.Errorf("create Parquet: %w", err)
 	}
 
 	fi, _ := os.Stat(inputPath)
@@ -164,9 +223,9 @@ func convert(inputPath, inputDisplay, outputPath, displayPath string, batchSize 
 		}
 		if err != nil {
 			if isJSON {
-				return fmt.Errorf("read JSON item %d: %w", jsonReader.ItemNum()+1, err)
+				return meta, fmt.Errorf("read JSON item %d: %w", jsonReader.ItemNum()+1, err)
 			}
-			return fmt.Errorf("read CSV row %d: %w", csvReader.RowNum(), err)
+			return meta, fmt.Errorf("read CSV row %d: %w", csvReader.RowNum(), err)
 		}
 
 		inputCount++
@@ -174,7 +233,7 @@ func convert(inputPath, inputDisplay, outputPath, displayPath string, batchSize 
 
 		if len(batch) >= batchSize {
 			if _, err := writer.Write(batch); err != nil {
-				return fmt.Errorf("write Parquet batch: %w", err)
+				return meta, fmt.Errorf("write Parquet batch: %w", err)
 			}
 			totalRows += len(batch)
 			batch = batch[:0]
@@ -191,13 +250,13 @@ func convert(inputPath, inputDisplay, outputPath, displayPath string, batchSize 
 	// Flush remaining
 	if len(batch) > 0 {
 		if _, err := writer.Write(batch); err != nil {
-			return fmt.Errorf("write final Parquet batch: %w", err)
+			return meta, fmt.Errorf("write final Parquet batch: %w", err)
 		}
 		totalRows += len(batch)
 	}
 
 	if err := writer.Close(); err != nil {
-		return fmt.Errorf("close Parquet: %w", err)
+		return meta, fmt.Errorf("close Parquet: %w", err)
 	}
 
 	elapsed := time.Since(start)
@@ -218,6 +277,25 @@ func convert(inputPath, inputDisplay, outputPath, displayPath string, batchSize 
 			float64(outSize)/1024/1024, float64(fileSize)/float64(outSize))
 	}
 
+	return meta, nil
+}
+
+func appendLogEntry(path string, entry *logEntry) error {
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("open log file: %w", err)
+	}
+	defer f.Close()
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return fmt.Errorf("marshal log entry: %w", err)
+	}
+	data = append(data, '\n')
+
+	if _, err := f.Write(data); err != nil {
+		return fmt.Errorf("write log entry: %w", err)
+	}
 	return nil
 }
 

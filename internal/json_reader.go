@@ -106,6 +106,7 @@ func (r *JSONReader) readHeader() error {
 				return fmt.Errorf("decode hospital_address: %w", err)
 			}
 			r.meta.hospitalAddress = strings.Join(v, "; ")
+			r.meta.hospitalAddresses = v
 
 		case "hospital_location":
 			var v []string
@@ -113,6 +114,7 @@ func (r *JSONReader) readHeader() error {
 				return fmt.Errorf("decode hospital_location: %w", err)
 			}
 			r.meta.hospitalLocation = strings.Join(v, "; ")
+			r.meta.hospitalLocations = v
 
 		case "location_name":
 			var v []string
@@ -120,6 +122,14 @@ func (r *JSONReader) readHeader() error {
 				return fmt.Errorf("decode location_name: %w", err)
 			}
 			r.meta.hospitalLocation = strings.Join(v, "; ")
+			r.meta.hospitalLocations = v
+
+		case "type_2_npi":
+			var v []string
+			if err := r.decoder.Decode(&v); err != nil {
+				return fmt.Errorf("decode type_2_npi: %w", err)
+			}
+			r.meta.type2NPIs = v
 
 		case "license_information":
 			var v jsonLicense
@@ -297,6 +307,20 @@ func (r *JSONReader) ItemNum() int64 {
 // Format returns "json-v2", "json-v3", or "json".
 func (r *JSONReader) Format() string {
 	return r.format
+}
+
+// Meta returns the hospital metadata parsed from the JSON header fields.
+func (r *JSONReader) Meta() RunMeta {
+	return RunMeta{
+		HospitalName:      r.meta.hospitalName,
+		LocationNames:     r.meta.hospitalLocations,
+		HospitalAddresses: r.meta.hospitalAddresses,
+		LicenseNumber:     r.meta.licenseNumber,
+		LicenseState:      r.meta.licenseState,
+		Type2NPIs:         r.meta.type2NPIs,
+		LastUpdatedOn:     r.meta.lastUpdatedOn,
+		Version:           r.meta.version,
+	}
 }
 
 // Close closes the underlying file.
