@@ -47,7 +47,32 @@ Examples:
 			os.Exit(1)
 		}
 
-		fmt.Printf("Loaded %d entries from %s\n", len(entries), input)
+		// Deduplicate entries by URL.
+		seenURLs := make(map[string]string) // url -> first location-name
+		var unique []jsonlEntry
+		var duplicates int
+		for _, entry := range entries {
+			if entry.MRFUrl == "" {
+				unique = append(unique, entry)
+				continue
+			}
+			if firstName, ok := seenURLs[entry.MRFUrl]; ok {
+				name := entry.LocationName
+				if name == "" {
+					name = "unknown"
+				}
+				fmt.Printf("SKIP %s: duplicate URL (same as %s)\n", name, firstName)
+				duplicates++
+				continue
+			}
+			seenURLs[entry.MRFUrl] = entry.LocationName
+			unique = append(unique, entry)
+		}
+		if duplicates > 0 {
+			fmt.Println()
+		}
+
+		fmt.Printf("Loaded %d entries from %s (%d duplicates removed)\n", len(unique), input, duplicates)
 		fmt.Printf("Output dir: %s\n", outDir)
 		fmt.Printf("Log file:   %s\n", logPath)
 		fmt.Println()
@@ -55,7 +80,7 @@ Examples:
 		succeeded := 0
 		failed := 0
 
-		for i, entry := range entries {
+		for i, entry := range unique {
 			name := entry.LocationName
 			if name == "" {
 				name = "unknown"
@@ -63,12 +88,12 @@ Examples:
 			url := entry.MRFUrl
 
 			if url == "" {
-				fmt.Printf("[%d/%d] SKIP %s: no mrf-url\n\n", i+1, len(entries), name)
+				fmt.Printf("[%d/%d] SKIP %s: no mrf-url\n\n", i+1, len(unique), name)
 				failed++
 				continue
 			}
 
-			fmt.Printf("[%d/%d] %s\n", i+1, len(entries), name)
+			fmt.Printf("[%d/%d] %s\n", i+1, len(unique), name)
 			fmt.Printf("  URL: %s\n", url)
 
 			safeName := sanitizeFilename(name)
@@ -91,7 +116,8 @@ Examples:
 			fmt.Println()
 		}
 
-		fmt.Printf("Done: %d succeeded, %d failed out of %d\n", succeeded, failed, len(entries))
+		fmt.Printf("Done: %d succeeded, %d failed, %d duplicates skipped out of %d total\n",
+			succeeded, failed, duplicates, len(unique)+duplicates)
 		if failed > 0 {
 			os.Exit(1)
 		}
