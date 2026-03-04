@@ -46,9 +46,11 @@ Examples:
 			os.Exit(1)
 		}
 
-		if err := os.MkdirAll(outDir, 0755); err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating output directory: %v\n", err)
-			os.Exit(1)
+		if !strings.HasPrefix(outDir, "s3://") {
+			if err := os.MkdirAll(outDir, 0755); err != nil {
+				fmt.Fprintf(os.Stderr, "Error creating output directory: %v\n", err)
+				os.Exit(1)
+			}
 		}
 
 		// Deduplicate entries by URL.
@@ -139,7 +141,8 @@ Examples:
 func init() {
 	batchCmd.Flags().String("input", "cms-hpt.jsonl", "JSONL file with hospital entries")
 	batchCmd.Flags().Int("limit", 0, "Max entries to process (0 = all)")
-	batchCmd.Flags().String("out-dir", "output", "Output directory for Parquet files")
+	defaultOutDir := fmt.Sprintf("s3://hospital-mrf/%s/", time.Now().Format("20060102-150405"))
+	batchCmd.Flags().String("out-dir", defaultOutDir, "Output directory for Parquet files")
 	defaultLog := fmt.Sprintf("hospital-loader-log-%s.jsonl", time.Now().Format("20060102-150405"))
 	batchCmd.Flags().String("log", defaultLog, "JSONL log file path")
 	batchCmd.Flags().Int("batch", 10000, "Batch size for Parquet writes")
@@ -167,7 +170,7 @@ func processBatchEntry(entry jsonlEntry, index, total int, outDir, logPath strin
 	fmt.Printf("[%d/%d] %s\n  URL: %s\n", index+1, total, name, url)
 
 	safeName := sanitizeFilename(name)
-	outPath := filepath.Join(outDir, safeName+".parquet")
+	outPath := joinOutPath(outDir, safeName+".parquet")
 
 	err := processEntry(url, outPath, logPath, batchSize, skipPayer)
 	if err == nil {
@@ -229,4 +232,13 @@ func sanitizeFilename(name string) string {
 		}
 	}
 	return strings.TrimSpace(strings.ReplaceAll(b.String(), " ", "_"))
+}
+
+// joinOutPath joins a directory and filename, handling both local paths and
+// S3 URIs (filepath.Join collapses s3:// to s3:/).
+func joinOutPath(dir, name string) string {
+	if strings.HasPrefix(dir, "s3://") {
+		return strings.TrimRight(dir, "/") + "/" + name
+	}
+	return filepath.Join(dir, name)
 }
