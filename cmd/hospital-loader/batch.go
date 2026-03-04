@@ -132,6 +132,11 @@ Examples:
 		s, f := succeeded.Load(), failed.Load()
 		fmt.Printf("Done: %d succeeded, %d failed, %d duplicates skipped out of %d total\n",
 			s, f, duplicates, int64(len(unique))+int64(duplicates))
+
+		if err := geocodeLogFile(logPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: geocoding failed: %v\n", err)
+		}
+
 		if f > 0 {
 			os.Exit(1)
 		}

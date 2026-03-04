@@ -29,6 +29,14 @@ type chargeReader interface {
 	Close() error
 }
 
+type geocodeResult struct {
+	Address   string  `json:"address"`
+	Matched   bool    `json:"matched"`
+	MatchType string  `json:"match_type,omitempty"`
+	Latitude  float64 `json:"latitude,omitempty"`
+	Longitude float64 `json:"longitude,omitempty"`
+}
+
 type logEntry struct {
 	Success           bool     `json:"success"`
 	InputFormat       string   `json:"input_format"`
@@ -36,15 +44,16 @@ type logEntry struct {
 	StartTime         string   `json:"start_time"`
 	DurationSeconds   float64  `json:"duration_seconds"`
 	Error             string   `json:"error,omitempty"`
-	OutputS3Location  string   `json:"output_s3_location,omitempty"`
+	OutputFile        string   `json:"output_file,omitempty"`
 	HospitalName      string   `json:"hospital_name"`
 	LocationNames     []string `json:"location_names"`
 	HospitalAddresses []string `json:"hospital_addresses"`
 	LicenseNumber     *string  `json:"license_number"`
 	LicenseState      *string  `json:"license_state"`
 	Type2NPIs         []string `json:"type_2_npis"`
-	LastUpdatedOn     string   `json:"last_updated_on"`
-	SchemaVersion     string   `json:"schema_version"`
+	LastUpdatedOn     string          `json:"last_updated_on"`
+	SchemaVersion     string          `json:"schema_version"`
+	Geocodes          []geocodeResult `json:"geocodes,omitempty"`
 }
 
 // processEntry handles a single file conversion: URL download, convert, log.
@@ -86,8 +95,14 @@ func processEntry(inputFile, outputFile, logFile string, batchSize int, skipPaye
 		if processErr != nil {
 			entry.Error = processErr.Error()
 		}
-		if strings.HasPrefix(outputFile, "s3://") {
-			entry.OutputS3Location = outputFile
+		if processErr == nil && outputFile != "" {
+			if strings.HasPrefix(outputFile, "s3://") {
+				entry.OutputFile = outputFile
+			} else if abs, err := filepath.Abs(outputFile); err == nil {
+				entry.OutputFile = abs
+			} else {
+				entry.OutputFile = outputFile
+			}
 		}
 
 		if err := appendLogEntry(logFile, &entry); err != nil {

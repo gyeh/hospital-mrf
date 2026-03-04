@@ -33,6 +33,10 @@ Examples:
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
+
+		if err := geocodeLogFile(logPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: geocoding failed: %v\n", err)
+		}
 	},
 }
 
