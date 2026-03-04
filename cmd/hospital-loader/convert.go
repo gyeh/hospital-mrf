@@ -51,14 +51,57 @@ type logEntry struct {
 // Both single and batch subcommands call this.
 func processEntry(inputFile, outputFile, logFile string, batchSize int, skipPayerCharges bool) error {
 	startTime := time.Now()
+	inputDisplay := inputFile
+	var meta internal.RunMeta
+	var processErr error
+
+	// Always write a log entry when we're done, regardless of success/failure.
+	defer func() {
+		inputFormat := "csv"
+		localExt := filepath.Ext(inputFile)
+		if isURL(inputFile) {
+			if u, err := url.Parse(inputFile); err == nil {
+				localExt = path.Ext(u.Path)
+			}
+		}
+		if strings.EqualFold(localExt, ".json") {
+			inputFormat = "json"
+		}
+
+		entry := logEntry{
+			Success:           processErr == nil,
+			InputFormat:       inputFormat,
+			URL:               inputDisplay,
+			StartTime:         startTime.Format(time.RFC3339),
+			DurationSeconds:   time.Since(startTime).Seconds(),
+			HospitalName:      meta.HospitalName,
+			LocationNames:     meta.LocationNames,
+			HospitalAddresses: meta.HospitalAddresses,
+			LicenseNumber:     meta.LicenseNumber,
+			LicenseState:      meta.LicenseState,
+			Type2NPIs:         meta.Type2NPIs,
+			LastUpdatedOn:     meta.LastUpdatedOn,
+			SchemaVersion:     meta.Version,
+		}
+		if processErr != nil {
+			entry.Error = processErr.Error()
+		}
+		if strings.HasPrefix(outputFile, "s3://") {
+			entry.OutputS3Location = outputFile
+		}
+
+		if err := appendLogEntry(logFile, &entry); err != nil {
+			log.Printf("warning: failed to write log entry: %v", err)
+		}
+	}()
 
 	// If input is a URL, download to a temp file first.
-	inputDisplay := inputFile
 	localInput := inputFile
 	if isURL(inputFile) {
 		localPath, cleanup, err := downloadURL(inputFile)
 		if err != nil {
-			return fmt.Errorf("download %s: %w", inputFile, err)
+			processErr = fmt.Errorf("download %s: %w", inputFile, err)
+			return processErr
 		}
 		defer cleanup()
 		localInput = localPath
@@ -81,7 +124,8 @@ func processEntry(inputFile, outputFile, logFile string, batchSize int, skipPaye
 		s3Dest = outputFile
 		f, err := os.CreateTemp("", "hospital-loader-*.parquet")
 		if err != nil {
-			return fmt.Errorf("create temp file: %v", err)
+			processErr = fmt.Errorf("create temp file: %v", err)
+			return processErr
 		}
 		localOut = f.Name()
 		f.Close()
@@ -97,47 +141,19 @@ func processEntry(inputFile, outputFile, logFile string, batchSize int, skipPaye
 	}
 
 	displayOut := outputFile
-	meta, convertErr := convert(localInput, inputDisplay, localOut, displayOut, batchSize, skipPayerCharges)
+	meta, processErr = convert(localInput, inputDisplay, localOut, displayOut, batchSize, skipPayerCharges)
+	if processErr != nil {
+		return processErr
+	}
 
-	if s3Dest != "" && convertErr == nil {
+	if s3Dest != "" {
 		if err := uploadToS3(context.Background(), localOut, s3Dest); err != nil {
-			return err
+			processErr = err
+			return processErr
 		}
 	}
 
-	// Write JSONL log entry
-	inputFormat := "csv"
-	if strings.EqualFold(filepath.Ext(localInput), ".json") {
-		inputFormat = "json"
-	}
-
-	entry := logEntry{
-		Success:           convertErr == nil,
-		InputFormat:       inputFormat,
-		URL:               inputDisplay,
-		StartTime:         startTime.Format(time.RFC3339),
-		DurationSeconds:   time.Since(startTime).Seconds(),
-		HospitalName:      meta.HospitalName,
-		LocationNames:     meta.LocationNames,
-		HospitalAddresses: meta.HospitalAddresses,
-		LicenseNumber:     meta.LicenseNumber,
-		LicenseState:      meta.LicenseState,
-		Type2NPIs:         meta.Type2NPIs,
-		LastUpdatedOn:     meta.LastUpdatedOn,
-		SchemaVersion:     meta.Version,
-	}
-	if convertErr != nil {
-		entry.Error = convertErr.Error()
-	}
-	if s3Dest != "" {
-		entry.OutputS3Location = s3Dest
-	}
-
-	if err := appendLogEntry(logFile, &entry); err != nil {
-		log.Printf("warning: failed to write log entry: %v", err)
-	}
-
-	return convertErr
+	return nil
 }
 
 func convert(inputPath, inputDisplay, outputPath, displayPath string, batchSize int, skipPayerCharges bool) (internal.RunMeta, error) {
