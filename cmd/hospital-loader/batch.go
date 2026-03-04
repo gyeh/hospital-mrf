@@ -89,9 +89,9 @@ Examples:
 		var succeeded, failed atomic.Int64
 
 		if parallel <= 1 {
-			// Sequential processing.
+			// Sequential processing — no prefix.
 			for i, entry := range unique {
-				ok := processBatchEntry(entry, i, len(unique), outDir, logPath, batch, skipPayer)
+				ok := processBatchEntry("", entry, i, len(unique), outDir, logPath, batch, skipPayer)
 				if ok {
 					succeeded.Add(1)
 				} else {
@@ -111,8 +111,9 @@ Examples:
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
+					prefix := goPrefix()
 					for w := range ch {
-						ok := processBatchEntry(w.entry, w.index, len(unique), outDir, logPath, batch, skipPayer)
+						ok := processBatchEntry(prefix, w.entry, w.index, len(unique), outDir, logPath, batch, skipPayer)
 						if ok {
 							succeeded.Add(1)
 						} else {
@@ -160,7 +161,7 @@ func init() {
 }
 
 // processBatchEntry processes a single entry and prints status. Returns true on success.
-func processBatchEntry(entry jsonlEntry, index, total int, outDir, logPath string, batchSize int, skipPayer bool) bool {
+func processBatchEntry(logPrefix string, entry jsonlEntry, index, total int, outDir, logPath string, batchSize int, skipPayer bool) bool {
 	name := entry.LocationName
 	if name == "" {
 		name = "unknown"
@@ -168,27 +169,27 @@ func processBatchEntry(entry jsonlEntry, index, total int, outDir, logPath strin
 	url := entry.MRFUrl
 
 	if url == "" {
-		fmt.Printf("[%d/%d] SKIP %s: no mrf-url\n\n", index+1, total, name)
+		pprintf(logPrefix, "[%d/%d] SKIP %s: no mrf-url\n\n", index+1, total, name)
 		return false
 	}
 
-	fmt.Printf("[%d/%d] %s\n  URL: %s\n", index+1, total, name, url)
+	pprintf(logPrefix, "[%d/%d] %s\n  URL: %s\n", index+1, total, name, url)
 
 	safeName := sanitizeFilename(name)
 	outPath := joinOutPath(outDir, safeName+".parquet")
 
-	err := processEntry(url, outPath, logPath, batchSize, skipPayer)
+	err := processEntry(logPrefix, url, outPath, logPath, batchSize, skipPayer)
 	if err == nil {
 		fi, statErr := os.Stat(outPath)
 		if statErr == nil {
-			fmt.Printf("  OK (%.1f MB)\n\n", float64(fi.Size())/1024/1024)
+			pprintf(logPrefix, "  OK (%.1f MB)\n\n", float64(fi.Size())/1024/1024)
 		} else {
-			fmt.Printf("  OK\n\n")
+			pprintf(logPrefix, "  OK\n\n")
 		}
 		return true
 	}
 
-	fmt.Printf("  FAILED: %v\n\n", err)
+	pprintf(logPrefix, "  FAILED: %v\n\n", err)
 	return false
 }
 

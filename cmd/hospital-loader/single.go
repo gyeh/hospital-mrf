@@ -29,7 +29,7 @@ Examples:
 			os.Exit(1)
 		}
 
-		if err := processEntry(file, out, logPath, batch, skipPayer); err != nil {
+		if err := processEntry("", file, out, logPath, batch, skipPayer); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
