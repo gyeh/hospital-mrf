@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"pricetool/internal"
 	"runtime"
 	"strings"
 	"sync"
@@ -111,7 +112,7 @@ Examples:
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					prefix := goPrefix()
+					prefix := internal.GoPrefix()
 					for w := range ch {
 						ok := processBatchEntry(prefix, w.entry, w.index, len(unique), outDir, logPath, batch, skipPayer)
 						if ok {
@@ -134,7 +135,7 @@ Examples:
 		fmt.Printf("Done: %d succeeded, %d failed, %d duplicates skipped out of %d total\n",
 			s, f, duplicates, int64(len(unique))+int64(duplicates))
 
-		if err := geocodeLogFile(logPath); err != nil {
+		if err := internal.GeocodeLogFile(logPath); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: geocoding failed: %v\n", err)
 		}
 
@@ -169,27 +170,27 @@ func processBatchEntry(logPrefix string, entry jsonlEntry, index, total int, out
 	url := entry.MRFUrl
 
 	if url == "" {
-		pprintf(logPrefix, "[%d/%d] SKIP %s: no mrf-url\n\n", index+1, total, name)
+		internal.Pprintf(logPrefix, "[%d/%d] SKIP %s: no mrf-url\n\n", index+1, total, name)
 		return false
 	}
 
-	pprintf(logPrefix, "[%d/%d] %s\n  URL: %s\n", index+1, total, name, url)
+	internal.Pprintf(logPrefix, "[%d/%d] %s\n  URL: %s\n", index+1, total, name, url)
 
 	safeName := sanitizeFilename(name)
 	outPath := joinOutPath(outDir, safeName+".parquet")
 
-	err := processEntry(logPrefix, url, outPath, logPath, batchSize, skipPayer)
+	err := internal.ProcessEntry(logPrefix, url, outPath, logPath, batchSize, skipPayer)
 	if err == nil {
 		fi, statErr := os.Stat(outPath)
 		if statErr == nil {
-			pprintf(logPrefix, "  OK (%.1f MB)\n\n", float64(fi.Size())/1024/1024)
+			internal.Pprintf(logPrefix, "  OK (%.1f MB)\n\n", float64(fi.Size())/1024/1024)
 		} else {
-			pprintf(logPrefix, "  OK\n\n")
+			internal.Pprintf(logPrefix, "  OK\n\n")
 		}
 		return true
 	}
 
-	pprintf(logPrefix, "  FAILED: %v\n\n", err)
+	internal.Pprintf(logPrefix, "  FAILED: %v\n\n", err)
 	return false
 }
 

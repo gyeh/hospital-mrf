@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"fmt"
@@ -19,13 +19,13 @@ func goid() uint64 {
 	return id
 }
 
-// goPrefix returns a "[G<id>] " prefix for the current goroutine.
-func goPrefix() string {
+// GoPrefix returns a "[G<id>] " prefix for the current goroutine.
+func GoPrefix() string {
 	return fmt.Sprintf("[G%d] ", goid())
 }
 
-// pprintf prints to stdout with the given prefix.
-func pprintf(prefix, format string, args ...any) {
+// Pprintf prints to stdout with the given prefix.
+func Pprintf(prefix, format string, args ...any) {
 	fmt.Printf("%s%s", prefix, fmt.Sprintf(format, args...))
 }
 

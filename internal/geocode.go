@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"bufio"
@@ -17,10 +17,10 @@ import (
 
 const censusBatchURL = "https://geocoding.geo.census.gov/geocoder/locations/addressbatch"
 
-// geocodeLogFile reads the JSONL log file, geocodes all unique hospital
+// GeocodeLogFile reads the JSONL log file, geocodes all unique hospital
 // addresses via the US Census batch API, and rewrites the log file with
 // geocode results populated.
-func geocodeLogFile(logFile string) error {
+func GeocodeLogFile(logFile string) error {
 	entries, err := readLogEntries(logFile)
 	if err != nil {
 		return fmt.Errorf("read log entries: %w", err)

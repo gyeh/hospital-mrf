@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"pricetool/internal"
 
 	"github.com/spf13/cobra"
 )
@@ -29,12 +30,12 @@ Examples:
 			os.Exit(1)
 		}
 
-		if err := processEntry("", file, out, logPath, batch, skipPayer); err != nil {
+		if err := internal.ProcessEntry("", file, out, logPath, batch, skipPayer); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 
-		if err := geocodeLogFile(logPath); err != nil {
+		if err := internal.GeocodeLogFile(logPath); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: geocoding failed: %v\n", err)
 		}
 	},

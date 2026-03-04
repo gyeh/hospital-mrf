@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"archive/zip"
@@ -13,7 +13,6 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
-	"pricetool/internal"
 	"strings"
 	"syscall"
 	"time"
@@ -24,7 +23,7 @@ import (
 
 // chargeReader is the common interface for CSV and JSON readers.
 type chargeReader interface {
-	Next() ([]internal.HospitalChargeRow, error)
+	Next() ([]HospitalChargeRow, error)
 	Format() string
 	Close() error
 }
@@ -38,30 +37,30 @@ type geocodeResult struct {
 }
 
 type logEntry struct {
-	Success           bool     `json:"success"`
-	InputFormat       string   `json:"input_format"`
-	URL               string   `json:"url"`
-	StartTime         string   `json:"start_time"`
-	DurationSeconds   float64  `json:"duration_seconds"`
-	Error             string   `json:"error,omitempty"`
-	OutputFile        string   `json:"output_file,omitempty"`
-	HospitalName      string   `json:"hospital_name"`
-	LocationNames     []string `json:"location_names"`
-	HospitalAddresses []string `json:"hospital_addresses"`
-	LicenseNumber     *string  `json:"license_number"`
-	LicenseState      *string  `json:"license_state"`
-	Type2NPIs         []string `json:"type_2_npis"`
+	Success           bool            `json:"success"`
+	InputFormat       string          `json:"input_format"`
+	URL               string          `json:"url"`
+	StartTime         string          `json:"start_time"`
+	DurationSeconds   float64         `json:"duration_seconds"`
+	Error             string          `json:"error,omitempty"`
+	OutputFile        string          `json:"output_file,omitempty"`
+	HospitalName      string          `json:"hospital_name"`
+	LocationNames     []string        `json:"location_names"`
+	HospitalAddresses []string        `json:"hospital_addresses"`
+	LicenseNumber     *string         `json:"license_number"`
+	LicenseState      *string         `json:"license_state"`
+	Type2NPIs         []string        `json:"type_2_npis"`
 	LastUpdatedOn     string          `json:"last_updated_on"`
 	SchemaVersion     string          `json:"schema_version"`
 	Geocodes          []geocodeResult `json:"geocodes,omitempty"`
 }
 
-// processEntry handles a single file conversion: URL download, convert, log.
+// ProcessEntry handles a single file conversion: URL download, convert, log.
 // Both single and batch subcommands call this.
-func processEntry(logPrefix, inputFile, outputFile, logFile string, batchSize int, skipPayerCharges bool) error {
+func ProcessEntry(logPrefix, inputFile, outputFile, logFile string, batchSize int, skipPayerCharges bool) error {
 	startTime := time.Now()
 	inputDisplay := inputFile
-	var meta internal.RunMeta
+	var meta RunMeta
 	var processErr error
 
 	// Always write a log entry when we're done, regardless of success/failure.
@@ -171,19 +170,19 @@ func processEntry(logPrefix, inputFile, outputFile, logFile string, batchSize in
 	return nil
 }
 
-func convert(logPrefix, inputPath, inputDisplay, outputPath, displayPath string, batchSize int, skipPayerCharges bool) (internal.RunMeta, error) {
+func convert(logPrefix, inputPath, inputDisplay, outputPath, displayPath string, batchSize int, skipPayerCharges bool) (RunMeta, error) {
 	start := time.Now()
-	var meta internal.RunMeta
+	var meta RunMeta
 
 	isJSON := strings.EqualFold(filepath.Ext(inputPath), ".json")
 
 	var reader chargeReader
-	var csvReader *internal.CSVReader
-	var jsonReader *internal.JSONReader
+	var csvReader *CSVReader
+	var jsonReader *JSONReader
 	var err error
 
 	if isJSON {
-		jsonReader, err = internal.NewJSONReader(inputPath)
+		jsonReader, err = NewJSONReader(inputPath)
 		if err != nil {
 			return meta, fmt.Errorf("open JSON: %w", err)
 		}
@@ -191,7 +190,7 @@ func convert(logPrefix, inputPath, inputDisplay, outputPath, displayPath string,
 		reader = jsonReader
 		meta = jsonReader.Meta()
 	} else {
-		csvReader, err = internal.NewCSVReader(inputPath)
+		csvReader, err = NewCSVReader(inputPath)
 		if err != nil {
 			return meta, fmt.Errorf("open CSV: %w", err)
 		}
@@ -201,7 +200,7 @@ func convert(logPrefix, inputPath, inputDisplay, outputPath, displayPath string,
 	}
 	defer reader.Close()
 
-	writer, err := internal.NewChargeWriter(outputPath)
+	writer, err := NewChargeWriter(outputPath)
 	if err != nil {
 		return meta, fmt.Errorf("create Parquet: %w", err)
 	}
@@ -212,14 +211,14 @@ func convert(logPrefix, inputPath, inputDisplay, outputPath, displayPath string,
 		fileSize = fi.Size()
 	}
 
-	pprintf(logPrefix, "Input:   %s\n", inputDisplay)
-	pprintf(logPrefix, "Output:  %s\n", displayPath)
-	pprintf(logPrefix, "Format:  %s\n", reader.Format())
+	Pprintf(logPrefix, "Input:   %s\n", inputDisplay)
+	Pprintf(logPrefix, "Output:  %s\n", displayPath)
+	Pprintf(logPrefix, "Format:  %s\n", reader.Format())
 	if csvReader != nil && csvReader.Format() == "wide" {
-		pprintf(logPrefix, "Payers:  %d payer/plan combinations\n", csvReader.PayerPlanCount())
+		Pprintf(logPrefix, "Payers:  %d payer/plan combinations\n", csvReader.PayerPlanCount())
 	}
 	if fileSize > 0 {
-		pprintf(logPrefix, "Size:    %.1f MB\n", float64(fileSize)/1024/1024)
+		Pprintf(logPrefix, "Size:    %.1f MB\n", float64(fileSize)/1024/1024)
 	}
 	pprintln(logPrefix)
 
@@ -228,7 +227,7 @@ func convert(logPrefix, inputPath, inputDisplay, outputPath, displayPath string,
 		inputLabel = "JSON items"
 	}
 
-	batch := make([]internal.HospitalChargeRow, 0, batchSize)
+	batch := make([]HospitalChargeRow, 0, batchSize)
 	var totalRows int
 	var inputCount int64
 	lastLog := time.Now()
@@ -258,7 +257,7 @@ func convert(logPrefix, inputPath, inputDisplay, outputPath, displayPath string,
 
 		if time.Since(lastLog) >= 5*time.Second {
 			elapsed := time.Since(start).Seconds()
-			pprintf(logPrefix, "  progress: %d %s → %d Parquet rows (%.0f rows/s)\n",
+			Pprintf(logPrefix, "  progress: %d %s → %d Parquet rows (%.0f rows/s)\n",
 				inputCount, inputLabel, totalRows+len(batch), float64(totalRows+len(batch))/elapsed)
 			lastLog = time.Now()
 		}
@@ -284,13 +283,13 @@ func convert(logPrefix, inputPath, inputDisplay, outputPath, displayPath string,
 	}
 
 	pprintln(logPrefix)
-	pprintf(logPrefix, "Done in %s\n", elapsed.Round(time.Millisecond))
-	pprintf(logPrefix, "  %-14s %d\n", inputLabel+":", inputCount)
-	pprintf(logPrefix, "  Parquet rows: %d\n", totalRows)
-	pprintf(logPrefix, "  Throughput:   %.0f rows/s\n", float64(totalRows)/elapsed.Seconds())
+	Pprintf(logPrefix, "Done in %s\n", elapsed.Round(time.Millisecond))
+	Pprintf(logPrefix, "  %-14s %d\n", inputLabel+":", inputCount)
+	Pprintf(logPrefix, "  Parquet rows: %d\n", totalRows)
+	Pprintf(logPrefix, "  Throughput:   %.0f rows/s\n", float64(totalRows)/elapsed.Seconds())
 	if fileSize > 0 && outSize > 0 {
-		pprintf(logPrefix, "  Input size:   %.1f MB\n", float64(fileSize)/1024/1024)
-		pprintf(logPrefix, "  Output size:  %.1f MB (%.1fx compression)\n",
+		Pprintf(logPrefix, "  Input size:   %.1f MB\n", float64(fileSize)/1024/1024)
+		Pprintf(logPrefix, "  Output size:  %.1f MB (%.1fx compression)\n",
 			float64(outSize)/1024/1024, float64(fileSize)/float64(outSize))
 	}
 
@@ -343,7 +342,7 @@ func uploadToS3(logPrefix string, ctx context.Context, localPath, s3URI string) 
 		return fmt.Errorf("stat local file: %w", err)
 	}
 
-	pprintf(logPrefix, "\nUploading %.1f MB to %s ...\n", float64(fi.Size())/1024/1024, s3URI)
+	Pprintf(logPrefix, "\nUploading %.1f MB to %s ...\n", float64(fi.Size())/1024/1024, s3URI)
 	start := time.Now()
 
 	cfg, err := config.LoadDefaultConfig(ctx)
@@ -361,7 +360,7 @@ func uploadToS3(logPrefix string, ctx context.Context, localPath, s3URI string) 
 		return fmt.Errorf("S3 PutObject: %w", err)
 	}
 
-	pprintf(logPrefix, "Uploaded in %s\n", time.Since(start).Round(time.Millisecond))
+	Pprintf(logPrefix, "Uploaded in %s\n", time.Since(start).Round(time.Millisecond))
 	return nil
 }
 
@@ -400,7 +399,7 @@ func downloadURL(logPrefix, rawURL string) (localPath string, cleanup func(), er
 		os.Exit(1)
 	}()
 
-	pprintf(logPrefix, "Downloading %s ...\n", rawURL)
+	Pprintf(logPrefix, "Downloading %s ...\n", rawURL)
 	start := time.Now()
 
 	req, err := http.NewRequest("GET", rawURL, nil)
@@ -438,7 +437,9 @@ func downloadURL(logPrefix, rawURL string) (localPath string, cleanup func(), er
 		return "", nil, fmt.Errorf("close temp file: %w", err)
 	}
 
-	pprintf(logPrefix, "Downloaded %.1f MB in %s\n\n", float64(n)/1024/1024, time.Since(start).Round(time.Millisecond))
+	dlDuration := time.Since(start)
+	dlSpeedMBs := float64(n) / 1024 / 1024 / dlDuration.Seconds()
+	Pprintf(logPrefix, "Downloaded %.1f MB in %s (%.1f MB/s)\n\n", float64(n)/1024/1024, dlDuration.Round(time.Millisecond), dlSpeedMBs)
 
 	// If the downloaded file is a zip, extract the first CSV/JSON from it.
 	if strings.HasSuffix(strings.ToLower(tmpPath), ".zip") {
@@ -450,7 +451,7 @@ func downloadURL(logPrefix, rawURL string) (localPath string, cleanup func(), er
 		// Clean up the zip file, return the extracted file instead.
 		os.Remove(tmpPath)
 		extractedCleanup := func() { os.Remove(extracted) }
-		pprintf(logPrefix, "Extracted %s (%.1f MB)\n\n", filepath.Base(extracted), float64(fileSize(extracted))/1024/1024)
+		Pprintf(logPrefix, "Extracted %s (%.1f MB)\n\n", filepath.Base(extracted), float64(fileSize(extracted))/1024/1024)
 		return extracted, extractedCleanup, nil
 	}
 
