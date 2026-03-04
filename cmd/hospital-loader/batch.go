@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"pricetool/internal"
 	"runtime"
 	"strings"
@@ -139,9 +138,6 @@ Examples:
 			fmt.Fprintf(os.Stderr, "Warning: geocoding failed: %v\n", err)
 		}
 
-		if f > 0 {
-			os.Exit(1)
-		}
 	},
 }
 
@@ -176,17 +172,13 @@ func processBatchEntry(logPrefix string, entry jsonlEntry, index, total int, out
 
 	internal.Pprintf(logPrefix, "[%d/%d] %s\n  URL: %s\n", index+1, total, name, url)
 
-	safeName := sanitizeFilename(name)
-	outPath := joinOutPath(outDir, safeName+".parquet")
+	// Pass the directory with trailing slash; ProcessEntry derives
+	// the filename from hospital metadata.
+	outPath := ensureTrailingSlash(outDir)
 
 	err := internal.ProcessEntry(logPrefix, url, outPath, logPath, batchSize, skipPayer)
 	if err == nil {
-		fi, statErr := os.Stat(outPath)
-		if statErr == nil {
-			internal.Pprintf(logPrefix, "  OK (%.1f MB)\n\n", float64(fi.Size())/1024/1024)
-		} else {
-			internal.Pprintf(logPrefix, "  OK\n\n")
-		}
+		internal.Pprintf(logPrefix, "  OK\n\n")
 		return true
 	}
 
@@ -227,25 +219,11 @@ func readJSONL(path string, limit int) ([]jsonlEntry, error) {
 	return entries, nil
 }
 
-// sanitizeFilename replaces non-alphanumeric characters (except - _ and space)
-// with underscores, then replaces spaces with underscores.
-func sanitizeFilename(name string) string {
-	var b strings.Builder
-	for _, c := range name {
-		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == ' ' {
-			b.WriteRune(c)
-		} else {
-			b.WriteRune('_')
-		}
+// ensureTrailingSlash ensures the path ends with "/" so ProcessEntry
+// treats it as a directory and derives the filename from metadata.
+func ensureTrailingSlash(p string) string {
+	if !strings.HasSuffix(p, "/") {
+		return p + "/"
 	}
-	return strings.TrimSpace(strings.ReplaceAll(b.String(), " ", "_"))
-}
-
-// joinOutPath joins a directory and filename, handling both local paths and
-// S3 URIs (filepath.Join collapses s3:// to s3:/).
-func joinOutPath(dir, name string) string {
-	if strings.HasPrefix(dir, "s3://") {
-		return strings.TrimRight(dir, "/") + "/" + name
-	}
-	return filepath.Join(dir, name)
+	return p
 }

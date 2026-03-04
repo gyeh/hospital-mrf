@@ -57,6 +57,15 @@ type logEntry struct {
 
 // ProcessEntry handles a single file conversion: URL download, convert, log.
 // Both single and batch subcommands call this.
+//
+// outputFile can be:
+//   - A specific file path: "output.parquet"
+//   - An S3 URI: "s3://bucket/key.parquet"
+//   - A directory (local or S3, ending in "/"): "out/" or "s3://bucket/prefix/"
+//   - Empty: output to current directory with metadata-derived name
+//
+// When outputFile is empty or a directory, the filename is derived from
+// hospital metadata: {hospital_name}-{license_number}-{last_updated_on}.parquet
 func ProcessEntry(logPrefix, inputFile, outputFile, logFile string, batchSize int, skipPayerCharges bool) error {
 	startTime := time.Now()
 	inputDisplay := inputFile
@@ -121,43 +130,70 @@ func ProcessEntry(logPrefix, inputFile, outputFile, logFile string, batchSize in
 		localInput = localPath
 	}
 
-	if outputFile == "" {
-		base := strings.TrimSuffix(filepath.Base(inputDisplay), filepath.Ext(inputDisplay))
-		// For URLs, extract filename from the URL path
-		if isURL(inputDisplay) {
-			if u, err := url.Parse(inputDisplay); err == nil {
-				base = strings.TrimSuffix(path.Base(u.Path), path.Ext(u.Path))
-			}
-		}
-		outputFile = base + ".parquet"
-	}
+	// Determine if output is a directory (filename will be derived from metadata).
+	outputIsDir := outputFile == "" || strings.HasSuffix(outputFile, "/")
+	isS3 := strings.HasPrefix(outputFile, "s3://")
 
+	// Always write to a temp file when the final name isn't known yet,
+	// or when uploading to S3.
+	var tempFile string
 	s3Dest := ""
 	localOut := outputFile
-	if strings.HasPrefix(outputFile, "s3://") {
-		s3Dest = outputFile
+
+	if isS3 || outputIsDir {
 		f, err := os.CreateTemp("", "hospital-loader-*.parquet")
 		if err != nil {
 			processErr = fmt.Errorf("create temp file: %v", err)
 			return processErr
 		}
-		localOut = f.Name()
+		tempFile = f.Name()
 		f.Close()
-		// Ensure temp file is cleaned up on exit and signals.
-		defer os.Remove(localOut)
+		localOut = tempFile
+		defer func() {
+			if tempFile != "" {
+				os.Remove(tempFile)
+			}
+		}()
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		go func() {
 			<-sigCh
-			os.Remove(localOut)
+			if tempFile != "" {
+				os.Remove(tempFile)
+			}
 			os.Exit(1)
 		}()
+		if isS3 {
+			s3Dest = outputFile
+		}
 	}
 
 	displayOut := outputFile
 	meta, processErr = convert(logPrefix, localInput, inputDisplay, localOut, displayOut, batchSize, skipPayerCharges)
 	if processErr != nil {
 		return processErr
+	}
+
+	// Resolve the final output filename from metadata.
+	if outputIsDir {
+		filename := buildOutputFilename(meta)
+		if isS3 {
+			outputFile = strings.TrimSuffix(outputFile, "/") + "/" + filename
+			s3Dest = outputFile
+		} else {
+			dir := strings.TrimSuffix(outputFile, "/")
+			if dir == "" {
+				dir = "."
+			}
+			finalPath := filepath.Join(dir, filename)
+			if err := os.Rename(localOut, finalPath); err != nil {
+				processErr = fmt.Errorf("rename output: %w", err)
+				return processErr
+			}
+			tempFile = "" // renamed successfully, don't clean up
+			outputFile = finalPath
+		}
+		Pprintf(logPrefix, "  Output file:  %s\n", outputFile)
 	}
 
 	if s3Dest != "" {
@@ -294,6 +330,43 @@ func convert(logPrefix, inputPath, inputDisplay, outputPath, displayPath string,
 	}
 
 	return meta, nil
+}
+
+// buildOutputFilename builds a parquet filename from hospital metadata:
+// {hospital_name}-{license_number}-{last_updated_on}.parquet
+// Missing parts are omitted.
+func buildOutputFilename(meta RunMeta) string {
+	var parts []string
+
+	name := sanitizeFilename(meta.HospitalName)
+	if name == "" {
+		name = "unknown"
+	}
+	parts = append(parts, name)
+
+	if meta.LicenseNumber != nil && *meta.LicenseNumber != "" {
+		parts = append(parts, sanitizeFilename(*meta.LicenseNumber))
+	}
+
+	if meta.LastUpdatedOn != "" {
+		parts = append(parts, sanitizeFilename(meta.LastUpdatedOn))
+	}
+
+	return strings.Join(parts, "-") + ".parquet"
+}
+
+// sanitizeFilename replaces characters that are unsafe in filenames with
+// underscores and collapses whitespace.
+func sanitizeFilename(name string) string {
+	var b strings.Builder
+	for _, c := range name {
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == ' ' {
+			b.WriteRune(c)
+		} else {
+			b.WriteRune('_')
+		}
+	}
+	return strings.ToLower(strings.TrimSpace(strings.ReplaceAll(b.String(), " ", "_")))
 }
 
 func appendLogEntry(path string, entry *logEntry) error {
