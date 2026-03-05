@@ -1,0 +1,22 @@
+@import "tailwindcss";
+@import "mapbox-gl/dist/mapbox-gl.css";
+
+@theme inline {
+  --font-sans: var(--font-inter);
+
+  --color-warm-50: #fdf8f6;
+  --color-warm-100: #f2e8e5;
+  --color-warm-200: #eaddd7;
+  --color-warm-300: #e0cec7;
+  --color-warm-400: #c2a99a;
+  --color-warm-500: #a18072;
+  --color-warm-600: #886f63;
+  --color-warm-700: #6f584e;
+  --color-warm-800: #5a4740;
+  --color-warm-900: #43302b;
+}
+
+body {
+  background: var(--color-warm-50);
+  color: var(--color-warm-900);
+}
