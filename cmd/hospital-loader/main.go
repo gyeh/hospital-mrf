@@ -21,6 +21,7 @@ func init() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	rootCmd.AddCommand(singleCmd)
 	rootCmd.AddCommand(batchCmd)
+	rootCmd.AddCommand(geocodeCmd)
 }
 
 func main() {

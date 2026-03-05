@@ -451,6 +451,50 @@ func uploadToS3(logger *slog.Logger, ctx context.Context, localPath, s3URI strin
 	return nil
 }
 
+// DownloadFromS3 downloads an S3 object to a local temp file.
+// Returns the temp file path and a cleanup function.
+func DownloadFromS3(ctx context.Context, s3URI string) (string, func(), error) {
+	bucket, key, err := parseS3URI(s3URI)
+	if err != nil {
+		return "", nil, err
+	}
+
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return "", nil, fmt.Errorf("load AWS config: %w", err)
+	}
+
+	client := s3.NewFromConfig(cfg)
+	resp, err := client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	})
+	if err != nil {
+		return "", nil, fmt.Errorf("S3 GetObject: %w", err)
+	}
+	defer resp.Body.Close()
+
+	tmp, err := os.CreateTemp("", "s3-download-*.jsonl")
+	if err != nil {
+		return "", nil, fmt.Errorf("create temp file: %w", err)
+	}
+
+	if _, err := io.Copy(tmp, resp.Body); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return "", nil, fmt.Errorf("download S3 object: %w", err)
+	}
+	tmp.Close()
+
+	cleanup := func() { os.Remove(tmp.Name()) }
+	return tmp.Name(), cleanup, nil
+}
+
+// UploadToS3 uploads a local file to S3.
+func UploadToS3(ctx context.Context, localPath, s3URI string) error {
+	return uploadToS3(slog.Default(), ctx, localPath, s3URI)
+}
+
 func isURL(s string) bool {
 	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
 }
