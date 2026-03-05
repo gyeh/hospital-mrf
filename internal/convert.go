@@ -427,7 +427,7 @@ func uploadToS3(logger *slog.Logger, ctx context.Context, localPath, s3URI strin
 		return fmt.Errorf("stat local file: %w", err)
 	}
 
-	logger.Info("uploading",
+	logger.Debug("uploading",
 		"size_mb", fmt.Sprintf("%.1f", float64(fi.Size())/1024/1024),
 		"dest", s3URI)
 	start := time.Now()
