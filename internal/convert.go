@@ -297,7 +297,7 @@ func convert(logger *slog.Logger, inputPath, inputDisplay, outputPath, displayPa
 		if time.Since(lastLog) >= 5*time.Second {
 			elapsed := time.Since(start).Seconds()
 			cur := totalRows + len(batch)
-			logger.Info("progress",
+			logger.Debug("progress",
 				"input_type", inputLabel, "input_count", inputCount,
 				"parquet_rows", cur,
 				"rows_per_sec", fmt.Sprintf("%.0f", float64(cur)/elapsed))
@@ -447,7 +447,7 @@ func uploadToS3(logger *slog.Logger, ctx context.Context, localPath, s3URI strin
 		return fmt.Errorf("S3 PutObject: %w", err)
 	}
 
-	logger.Info("uploaded", "duration", time.Since(start).Round(time.Millisecond).String())
+	logger.Debug("uploaded", "duration", time.Since(start).Round(time.Millisecond).String())
 	return nil
 }
 

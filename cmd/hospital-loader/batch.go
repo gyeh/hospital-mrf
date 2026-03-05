@@ -87,9 +87,10 @@ Examples:
 		var succeeded, failed atomic.Int64
 
 		if parallel <= 1 {
-			// Sequential processing — use default logger.
+			// Sequential processing.
 			for i, entry := range unique {
-				ok := processBatchEntry(slog.Default(), entry, i, len(unique), outDir, logPath, batch, skipPayer)
+				logger := internal.EntryLogger(i+1, len(unique))
+				ok := processBatchEntry(logger, entry, outDir, logPath, batch, skipPayer)
 				if ok {
 					succeeded.Add(1)
 				} else {
@@ -105,13 +106,13 @@ Examples:
 			ch := make(chan work)
 			var wg sync.WaitGroup
 
-			for i := range parallel {
+			for range parallel {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					logger := internal.GoroutineLogger(i)
 					for w := range ch {
-						ok := processBatchEntry(logger, w.entry, w.index, len(unique), outDir, logPath, batch, skipPayer)
+						logger := internal.EntryLogger(w.index+1, len(unique))
+						ok := processBatchEntry(logger, w.entry, outDir, logPath, batch, skipPayer)
 						if ok {
 							succeeded.Add(1)
 						} else {
@@ -158,7 +159,7 @@ func init() {
 }
 
 // processBatchEntry processes a single entry and prints status. Returns true on success.
-func processBatchEntry(logger *slog.Logger, entry jsonlEntry, index, total int, outDir, logPath string, batchSize int, skipPayer bool) bool {
+func processBatchEntry(logger *slog.Logger, entry jsonlEntry, outDir, logPath string, batchSize int, skipPayer bool) bool {
 	name := entry.LocationName
 	if name == "" {
 		name = "unknown"
@@ -166,11 +167,11 @@ func processBatchEntry(logger *slog.Logger, entry jsonlEntry, index, total int, 
 	url := entry.MRFUrl
 
 	if url == "" {
-		logger.Warn("skip: no mrf-url", "index", index+1, "total", total, "name", name)
+		logger.Warn("skip: no mrf-url", "name", name)
 		return false
 	}
 
-	logger.Info("processing", "index", index+1, "total", total, "name", name, "url", url)
+	logger.Info("processing", "name", name, "url", url)
 
 	// Pass the directory with trailing slash; ProcessEntry derives
 	// the filename from hospital metadata.
@@ -178,11 +179,11 @@ func processBatchEntry(logger *slog.Logger, entry jsonlEntry, index, total int, 
 
 	err := internal.ProcessEntry(logger, url, outPath, logPath, batchSize, skipPayer)
 	if err == nil {
-		logger.Info("completed", "index", index+1, "total", total, "name", name)
+		logger.Info("completed", "name", name)
 		return true
 	}
 
-	logger.Error("failed", "index", index+1, "total", total, "name", name, "error", err)
+	logger.Error("failed", "name", name, "error", err)
 	return false
 }
 

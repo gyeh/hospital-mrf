@@ -1,10 +1,11 @@
 package internal
 
 import (
+	"fmt"
 	"log/slog"
 )
 
-// GoroutineLogger returns a child logger tagged with the current goroutine ID.
-func GoroutineLogger(id int) *slog.Logger {
-	return slog.Default().With("goroutine", id)
+// EntryLogger returns a child logger tagged with the entry count (1-based index and total).
+func EntryLogger(index, total int) *slog.Logger {
+	return slog.Default().With("entry", fmt.Sprintf("%d/%d", index, total))
 }
