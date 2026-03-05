@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"pricetool/internal"
 	"runtime"
@@ -42,13 +43,13 @@ Examples:
 
 		entries, err := readJSONL(input, limit)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading %s: %v\n", input, err)
+			slog.Error("failed to read input", "file", input, "error", err)
 			os.Exit(1)
 		}
 
 		if !strings.HasPrefix(outDir, "s3://") {
 			if err := os.MkdirAll(outDir, 0755); err != nil {
-				fmt.Fprintf(os.Stderr, "Error creating output directory: %v\n", err)
+				slog.Error("failed to create output directory", "error", err)
 				os.Exit(1)
 			}
 		}
@@ -67,31 +68,28 @@ Examples:
 				if name == "" {
 					name = "unknown"
 				}
-				fmt.Printf("SKIP %s: duplicate URL (same as %s)\n", name, firstName)
+				slog.Info("skip duplicate", "name", name, "same_as", firstName)
 				duplicates++
 				continue
 			}
 			seenURLs[entry.MRFUrl] = entry.LocationName
 			unique = append(unique, entry)
 		}
-		if duplicates > 0 {
-			fmt.Println()
-		}
 
-		fmt.Printf("Loaded %d entries from %s (%d duplicates removed)\n", len(unique), input, duplicates)
-		fmt.Printf("Output dir: %s\n", outDir)
-		fmt.Printf("Log file:   %s\n", logPath)
-		if parallel > 1 {
-			fmt.Printf("Parallel:   %d workers\n", parallel)
-		}
-		fmt.Println()
+		slog.Info("batch started",
+			"entries", len(unique),
+			"duplicates_removed", duplicates,
+			"input", input,
+			"out_dir", outDir,
+			"log_file", logPath,
+			"parallel", parallel)
 
 		var succeeded, failed atomic.Int64
 
 		if parallel <= 1 {
-			// Sequential processing — no prefix.
+			// Sequential processing — use default logger.
 			for i, entry := range unique {
-				ok := processBatchEntry("", entry, i, len(unique), outDir, logPath, batch, skipPayer)
+				ok := processBatchEntry(slog.Default(), entry, i, len(unique), outDir, logPath, batch, skipPayer)
 				if ok {
 					succeeded.Add(1)
 				} else {
@@ -107,13 +105,13 @@ Examples:
 			ch := make(chan work)
 			var wg sync.WaitGroup
 
-			for range parallel {
+			for i := range parallel {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					prefix := internal.GoPrefix()
+					logger := internal.GoroutineLogger(i)
 					for w := range ch {
-						ok := processBatchEntry(prefix, w.entry, w.index, len(unique), outDir, logPath, batch, skipPayer)
+						ok := processBatchEntry(logger, w.entry, w.index, len(unique), outDir, logPath, batch, skipPayer)
 						if ok {
 							succeeded.Add(1)
 						} else {
@@ -131,13 +129,15 @@ Examples:
 		}
 
 		s, f := succeeded.Load(), failed.Load()
-		fmt.Printf("Done: %d succeeded, %d failed, %d duplicates skipped out of %d total\n",
-			s, f, duplicates, int64(len(unique))+int64(duplicates))
+		slog.Info("batch done",
+			"succeeded", s,
+			"failed", f,
+			"duplicates_skipped", duplicates,
+			"total", int64(len(unique))+int64(duplicates))
 
 		if err := internal.GeocodeLogFile(logPath); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: geocoding failed: %v\n", err)
+			slog.Warn("geocoding failed", "error", err)
 		}
-
 	},
 }
 
@@ -158,7 +158,7 @@ func init() {
 }
 
 // processBatchEntry processes a single entry and prints status. Returns true on success.
-func processBatchEntry(logPrefix string, entry jsonlEntry, index, total int, outDir, logPath string, batchSize int, skipPayer bool) bool {
+func processBatchEntry(logger *slog.Logger, entry jsonlEntry, index, total int, outDir, logPath string, batchSize int, skipPayer bool) bool {
 	name := entry.LocationName
 	if name == "" {
 		name = "unknown"
@@ -166,23 +166,23 @@ func processBatchEntry(logPrefix string, entry jsonlEntry, index, total int, out
 	url := entry.MRFUrl
 
 	if url == "" {
-		internal.Pprintf(logPrefix, "[%d/%d] SKIP %s: no mrf-url\n\n", index+1, total, name)
+		logger.Warn("skip: no mrf-url", "index", index+1, "total", total, "name", name)
 		return false
 	}
 
-	internal.Pprintf(logPrefix, "[%d/%d] %s\n  URL: %s\n", index+1, total, name, url)
+	logger.Info("processing", "index", index+1, "total", total, "name", name, "url", url)
 
 	// Pass the directory with trailing slash; ProcessEntry derives
 	// the filename from hospital metadata.
 	outPath := ensureTrailingSlash(outDir)
 
-	err := internal.ProcessEntry(logPrefix, url, outPath, logPath, batchSize, skipPayer)
+	err := internal.ProcessEntry(logger, url, outPath, logPath, batchSize, skipPayer)
 	if err == nil {
-		internal.Pprintf(logPrefix, "  OK\n\n")
+		logger.Info("completed", "index", index+1, "total", total, "name", name)
 		return true
 	}
 
-	internal.Pprintf(logPrefix, "  FAILED: %v\n\n", err)
+	logger.Error("failed", "index", index+1, "total", total, "name", name, "error", err)
 	return false
 }
 

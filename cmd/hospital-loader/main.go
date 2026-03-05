@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -18,13 +18,14 @@ Use "hospital-loader single" to convert a single file, or
 }
 
 func init() {
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	rootCmd.AddCommand(singleCmd)
 	rootCmd.AddCommand(batchCmd)
 }
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		slog.Error("fatal", "error", err)
 		os.Exit(1)
 	}
 }

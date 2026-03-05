@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -66,7 +66,7 @@ type logEntry struct {
 //
 // When outputFile is empty or a directory, the filename is derived from
 // hospital metadata: {hospital_name}-{license_number}-{last_updated_on}.parquet
-func ProcessEntry(logPrefix, inputFile, outputFile, logFile string, batchSize int, skipPayerCharges bool) error {
+func ProcessEntry(logger *slog.Logger, inputFile, outputFile, logFile string, batchSize int, skipPayerCharges bool) error {
 	startTime := time.Now()
 	inputDisplay := inputFile
 	var meta RunMeta
@@ -114,14 +114,14 @@ func ProcessEntry(logPrefix, inputFile, outputFile, logFile string, batchSize in
 		}
 
 		if err := appendLogEntry(logFile, &entry); err != nil {
-			log.Printf("warning: failed to write log entry: %v", err)
+			logger.Warn("failed to write log entry", "error", err)
 		}
 	}()
 
 	// If input is a URL, download to a temp file first.
 	localInput := inputFile
 	if isURL(inputFile) {
-		localPath, cleanup, err := downloadURL(logPrefix, inputFile)
+		localPath, cleanup, err := downloadURL(logger, inputFile)
 		if err != nil {
 			processErr = fmt.Errorf("download %s: %w", inputFile, err)
 			return processErr
@@ -169,7 +169,7 @@ func ProcessEntry(logPrefix, inputFile, outputFile, logFile string, batchSize in
 	}
 
 	displayOut := outputFile
-	meta, processErr = convert(logPrefix, localInput, inputDisplay, localOut, displayOut, batchSize, skipPayerCharges)
+	meta, processErr = convert(logger, localInput, inputDisplay, localOut, displayOut, batchSize, skipPayerCharges)
 	if processErr != nil {
 		return processErr
 	}
@@ -193,11 +193,11 @@ func ProcessEntry(logPrefix, inputFile, outputFile, logFile string, batchSize in
 			tempFile = "" // renamed successfully, don't clean up
 			outputFile = finalPath
 		}
-		Pprintf(logPrefix, "  Output file:  %s\n", outputFile)
+		logger.Info("output file resolved", "path", outputFile)
 	}
 
 	if s3Dest != "" {
-		if err := uploadToS3(logPrefix, context.Background(), localOut, s3Dest); err != nil {
+		if err := uploadToS3(logger, context.Background(), localOut, s3Dest); err != nil {
 			processErr = err
 			return processErr
 		}
@@ -206,7 +206,7 @@ func ProcessEntry(logPrefix, inputFile, outputFile, logFile string, batchSize in
 	return nil
 }
 
-func convert(logPrefix, inputPath, inputDisplay, outputPath, displayPath string, batchSize int, skipPayerCharges bool) (RunMeta, error) {
+func convert(logger *slog.Logger, inputPath, inputDisplay, outputPath, displayPath string, batchSize int, skipPayerCharges bool) (RunMeta, error) {
 	start := time.Now()
 	var meta RunMeta
 
@@ -242,21 +242,24 @@ func convert(logPrefix, inputPath, inputDisplay, outputPath, displayPath string,
 	}
 
 	fi, _ := os.Stat(inputPath)
-	fileSize := int64(0)
+	inputSize := int64(0)
 	if fi != nil {
-		fileSize = fi.Size()
+		inputSize = fi.Size()
 	}
 
-	Pprintf(logPrefix, "Input:   %s\n", inputDisplay)
-	Pprintf(logPrefix, "Output:  %s\n", displayPath)
-	Pprintf(logPrefix, "Format:  %s\n", reader.Format())
+	// Log conversion start as a single line with all metadata.
+	attrs := []any{
+		"input", inputDisplay,
+		"output", displayPath,
+		"format", reader.Format(),
+	}
 	if csvReader != nil && csvReader.Format() == "wide" {
-		Pprintf(logPrefix, "Payers:  %d payer/plan combinations\n", csvReader.PayerPlanCount())
+		attrs = append(attrs, "payers", csvReader.PayerPlanCount())
 	}
-	if fileSize > 0 {
-		Pprintf(logPrefix, "Size:    %.1f MB\n", float64(fileSize)/1024/1024)
+	if inputSize > 0 {
+		attrs = append(attrs, "size_mb", fmt.Sprintf("%.1f", float64(inputSize)/1024/1024))
 	}
-	pprintln(logPrefix)
+	logger.Info("converting", attrs...)
 
 	inputLabel := "CSV rows"
 	if isJSON {
@@ -293,8 +296,11 @@ func convert(logPrefix, inputPath, inputDisplay, outputPath, displayPath string,
 
 		if time.Since(lastLog) >= 5*time.Second {
 			elapsed := time.Since(start).Seconds()
-			Pprintf(logPrefix, "  progress: %d %s → %d Parquet rows (%.0f rows/s)\n",
-				inputCount, inputLabel, totalRows+len(batch), float64(totalRows+len(batch))/elapsed)
+			cur := totalRows + len(batch)
+			logger.Info("progress",
+				"input_type", inputLabel, "input_count", inputCount,
+				"parquet_rows", cur,
+				"rows_per_sec", fmt.Sprintf("%.0f", float64(cur)/elapsed))
 			lastLog = time.Now()
 		}
 	}
@@ -318,16 +324,22 @@ func convert(logPrefix, inputPath, inputDisplay, outputPath, displayPath string,
 		outSize = outFi.Size()
 	}
 
-	pprintln(logPrefix)
-	Pprintf(logPrefix, "Done in %s\n", elapsed.Round(time.Millisecond))
-	Pprintf(logPrefix, "  %-14s %d\n", inputLabel+":", inputCount)
-	Pprintf(logPrefix, "  Parquet rows: %d\n", totalRows)
-	Pprintf(logPrefix, "  Throughput:   %.0f rows/s\n", float64(totalRows)/elapsed.Seconds())
-	if fileSize > 0 && outSize > 0 {
-		Pprintf(logPrefix, "  Input size:   %.1f MB\n", float64(fileSize)/1024/1024)
-		Pprintf(logPrefix, "  Output size:  %.1f MB (%.1fx compression)\n",
-			float64(outSize)/1024/1024, float64(fileSize)/float64(outSize))
+	// Log completion as a single line with all stats.
+	doneAttrs := []any{
+		"duration", elapsed.Round(time.Millisecond).String(),
+		"input_type", inputLabel,
+		"input_count", inputCount,
+		"parquet_rows", totalRows,
+		"rows_per_sec", fmt.Sprintf("%.0f", float64(totalRows)/elapsed.Seconds()),
 	}
+	if inputSize > 0 && outSize > 0 {
+		doneAttrs = append(doneAttrs,
+			"input_size_mb", fmt.Sprintf("%.1f", float64(inputSize)/1024/1024),
+			"output_size_mb", fmt.Sprintf("%.1f", float64(outSize)/1024/1024),
+			"compression", fmt.Sprintf("%.1fx", float64(inputSize)/float64(outSize)),
+		)
+	}
+	logger.Info("done", doneAttrs...)
 
 	return meta, nil
 }
@@ -398,7 +410,7 @@ func parseS3URI(uri string) (bucket, key string, err error) {
 	return parts[0], parts[1], nil
 }
 
-func uploadToS3(logPrefix string, ctx context.Context, localPath, s3URI string) error {
+func uploadToS3(logger *slog.Logger, ctx context.Context, localPath, s3URI string) error {
 	bucket, key, err := parseS3URI(s3URI)
 	if err != nil {
 		return err
@@ -415,7 +427,9 @@ func uploadToS3(logPrefix string, ctx context.Context, localPath, s3URI string) 
 		return fmt.Errorf("stat local file: %w", err)
 	}
 
-	Pprintf(logPrefix, "\nUploading %.1f MB to %s ...\n", float64(fi.Size())/1024/1024, s3URI)
+	logger.Info("uploading",
+		"size_mb", fmt.Sprintf("%.1f", float64(fi.Size())/1024/1024),
+		"dest", s3URI)
 	start := time.Now()
 
 	cfg, err := config.LoadDefaultConfig(ctx)
@@ -433,7 +447,7 @@ func uploadToS3(logPrefix string, ctx context.Context, localPath, s3URI string) 
 		return fmt.Errorf("S3 PutObject: %w", err)
 	}
 
-	Pprintf(logPrefix, "Uploaded in %s\n", time.Since(start).Round(time.Millisecond))
+	logger.Info("uploaded", "duration", time.Since(start).Round(time.Millisecond).String())
 	return nil
 }
 
@@ -444,7 +458,7 @@ func isURL(s string) bool {
 // downloadURL downloads a URL to a temp file, preserving the original file
 // extension so format detection works. Returns the temp file path and a
 // cleanup function that removes the temp file.
-func downloadURL(logPrefix, rawURL string) (localPath string, cleanup func(), err error) {
+func downloadURL(logger *slog.Logger, rawURL string) (localPath string, cleanup func(), err error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return "", nil, fmt.Errorf("parse URL: %w", err)
@@ -472,7 +486,7 @@ func downloadURL(logPrefix, rawURL string) (localPath string, cleanup func(), er
 		os.Exit(1)
 	}()
 
-	Pprintf(logPrefix, "Downloading %s ...\n", rawURL)
+	logger.Info("downloading", "url", rawURL)
 	start := time.Now()
 
 	req, err := http.NewRequest("GET", rawURL, nil)
@@ -512,7 +526,10 @@ func downloadURL(logPrefix, rawURL string) (localPath string, cleanup func(), er
 
 	dlDuration := time.Since(start)
 	dlSpeedMBs := float64(n) / 1024 / 1024 / dlDuration.Seconds()
-	Pprintf(logPrefix, "Downloaded %.1f MB in %s (%.1f MB/s)\n\n", float64(n)/1024/1024, dlDuration.Round(time.Millisecond), dlSpeedMBs)
+	logger.Info("downloaded",
+		"size_mb", fmt.Sprintf("%.1f", float64(n)/1024/1024),
+		"duration", dlDuration.Round(time.Millisecond).String(),
+		"speed_mb_s", fmt.Sprintf("%.1f", dlSpeedMBs))
 
 	// If the downloaded file is a zip, extract the first CSV/JSON from it.
 	if strings.HasSuffix(strings.ToLower(tmpPath), ".zip") {
@@ -524,7 +541,9 @@ func downloadURL(logPrefix, rawURL string) (localPath string, cleanup func(), er
 		// Clean up the zip file, return the extracted file instead.
 		os.Remove(tmpPath)
 		extractedCleanup := func() { os.Remove(extracted) }
-		Pprintf(logPrefix, "Extracted %s (%.1f MB)\n\n", filepath.Base(extracted), float64(fileSize(extracted))/1024/1024)
+		logger.Info("extracted",
+			"file", filepath.Base(extracted),
+			"size_mb", fmt.Sprintf("%.1f", float64(fileSize(extracted))/1024/1024))
 		return extracted, extractedCleanup, nil
 	}
 

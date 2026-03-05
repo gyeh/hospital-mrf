@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"log/slog"
 	"os"
 	"pricetool/internal"
 
@@ -25,18 +25,18 @@ Examples:
 		logPath, _ := cmd.Flags().GetString("log")
 
 		if file == "" {
-			fmt.Fprintln(os.Stderr, "Error: --file is required")
+			slog.Error("--file is required")
 			cmd.Usage()
 			os.Exit(1)
 		}
 
-		if err := internal.ProcessEntry("", file, out, logPath, batch, skipPayer); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		if err := internal.ProcessEntry(slog.Default(), file, out, logPath, batch, skipPayer); err != nil {
+			slog.Error("conversion failed", "error", err)
 			os.Exit(1)
 		}
 
 		if err := internal.GeocodeLogFile(logPath); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: geocoding failed: %v\n", err)
+			slog.Warn("geocoding failed", "error", err)
 		}
 	},
 }

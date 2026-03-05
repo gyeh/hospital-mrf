@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -49,7 +49,7 @@ func GeocodeLogFile(logFile string) error {
 		return nil
 	}
 
-	fmt.Printf("\nGeocoding %d unique addresses...\n", len(orderedAddrs))
+	slog.Info("geocoding", "unique_addresses", len(orderedAddrs))
 
 	// Build CSV for Census batch API: id, street, city, state, zip
 	// Put full address in street field; leave city/state/zip blank.
@@ -98,7 +98,7 @@ func GeocodeLogFile(logFile string) error {
 			matched++
 		}
 	}
-	fmt.Printf("Geocoded: %d/%d addresses matched\n", matched, len(orderedAddrs))
+	slog.Info("geocoded", "matched", matched, "total", len(orderedAddrs))
 
 	// Populate geocodes on each entry.
 	for i := range entries {
@@ -226,7 +226,7 @@ func readLogEntries(path string) ([]logEntry, error) {
 		}
 		var e logEntry
 		if err := json.Unmarshal([]byte(line), &e); err != nil {
-			log.Printf("warning: skipping unparseable log line: %v", err)
+			slog.Warn("skipping unparseable log line", "error", err)
 			continue
 		}
 		entries = append(entries, e)
