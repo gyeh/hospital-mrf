@@ -34,6 +34,7 @@ type geocodeResult struct {
 	MatchType string  `json:"match_type,omitempty"`
 	Latitude  float64 `json:"latitude,omitempty"`
 	Longitude float64 `json:"longitude,omitempty"`
+	Source    string  `json:"source,omitempty"`
 }
 
 type logEntry struct {
