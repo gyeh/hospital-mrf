@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useState, useEffect, FormEvent } from "react";
 import { SearchResponse } from "@/lib/types";
 import { clientSearch } from "@/lib/search-client";
 import { PriceQueryResult, queryPrices } from "@/lib/duckdb";
@@ -41,6 +41,21 @@ export default function SearchForm() {
   const [priceData, setPriceData] = useState<PriceQueryResult | null>(null);
   const [priceLoading, setPriceLoading] = useState(false);
   const [priceError, setPriceError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("https://ipapi.co/json/")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (
+          data?.country_code === "US" &&
+          data?.postal &&
+          /^\d{5}$/.test(data.postal)
+        ) {
+          setZipCode((prev) => (prev === "" ? data.postal : prev));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
