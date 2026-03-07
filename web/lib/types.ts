@@ -28,3 +28,5 @@ export interface SearchResponse {
   zipCode: string;
   totalHospitals: number;
 }
+
+export type { ChargeRow, PriceQueryResult } from "./duckdb";

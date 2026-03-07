@@ -2,6 +2,7 @@
 
 import { useState, FormEvent } from "react";
 import { SearchResponse } from "@/lib/types";
+import { PriceQueryResult, queryPrices } from "@/lib/duckdb";
 import ResultsMap from "./ResultsMap";
 import ResultsList from "./ResultsList";
 
@@ -36,11 +37,17 @@ export default function SearchForm() {
   const [data, setData] = useState<SearchResponse | null>(null);
   const [hoveredHospital, setHoveredHospital] = useState<string | null>(null);
 
+  const [priceData, setPriceData] = useState<PriceQueryResult | null>(null);
+  const [priceLoading, setPriceLoading] = useState(false);
+  const [priceError, setPriceError] = useState<string | null>(null);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
     setData(null);
+    setPriceData(null);
+    setPriceError(null);
 
     try {
       const res = await fetch("/api/search", {
@@ -54,6 +61,21 @@ export default function SearchForm() {
         return;
       }
       setData(json);
+
+      // Run DuckDB price query on the returned hospital parquet files
+      if (json.results.length > 0) {
+        setPriceLoading(true);
+        try {
+          const result = await queryPrices(json.results, codeType, codeValue);
+          setPriceData(result);
+        } catch (err) {
+          setPriceError(
+            err instanceof Error ? err.message : "Price query failed"
+          );
+        } finally {
+          setPriceLoading(false);
+        }
+      }
     } catch {
       setError("Network error — please try again");
     } finally {
@@ -130,10 +152,10 @@ export default function SearchForm() {
 
         <button
           type="submit"
-          disabled={loading || zipCode.length !== 5}
+          disabled={loading || priceLoading || zipCode.length !== 5}
           className="h-10 rounded-lg bg-blue-600 px-5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
-          {loading ? "Searching..." : "Search"}
+          {loading || priceLoading ? "Searching..." : "Search"}
         </button>
       </form>
 
@@ -143,21 +165,72 @@ export default function SearchForm() {
         </div>
       )}
 
-      {data && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <ResultsMap
-            results={data.results}
-            center={data.center}
-            hoveredHospital={hoveredHospital}
-            onHoverHospital={setHoveredHospital}
-          />
-          <ResultsList
-            results={data.results}
-            codeType={codeType}
-            codeValue={codeValue}
-            hoveredHospital={hoveredHospital}
-            onHoverHospital={setHoveredHospital}
-          />
+      {/* Loading indicator while prices are being queried */}
+      {(loading || priceLoading) && (
+        <div className="flex items-center justify-center gap-3 rounded-xl border border-warm-200 bg-white py-12 shadow-sm">
+          <svg
+            className="h-5 w-5 animate-spin text-blue-600"
+            viewBox="0 0 24 24"
+            fill="none"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+            />
+          </svg>
+          <span className="text-sm text-warm-600">
+            {loading
+              ? "Finding nearby hospitals..."
+              : `Querying prices across ${data?.results.length ?? 0} hospital files...`}
+          </span>
+        </div>
+      )}
+
+      {/* Only show results after prices have loaded; filter to hospitals with charges */}
+      {data && priceData && !priceLoading && (() => {
+        const filteredResults = data.results.filter(
+          (h) => (priceData.chargesByHospital[h.hospitalName]?.length ?? 0) > 0
+        );
+        return filteredResults.length > 0 ? (
+          <div className="grid gap-6 lg:grid-cols-2">
+            <ResultsMap
+              results={filteredResults}
+              center={data.center}
+              hoveredHospital={hoveredHospital}
+              onHoverHospital={setHoveredHospital}
+            />
+            <ResultsList
+              results={filteredResults}
+              codeType={codeType}
+              codeValue={codeValue}
+              hoveredHospital={hoveredHospital}
+              onHoverHospital={setHoveredHospital}
+              priceData={priceData}
+              priceLoading={false}
+              priceError={priceError}
+            />
+          </div>
+        ) : (
+          <div className="rounded-xl border border-warm-200 bg-white py-12 text-center shadow-sm">
+            <p className="text-sm text-warm-500">
+              No hospitals found with pricing for {codeType} {codeValue} in this area.
+            </p>
+          </div>
+        );
+      })()}
+
+      {data && priceError && !priceLoading && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          Price query failed: {priceError}
         </div>
       )}
     </div>
