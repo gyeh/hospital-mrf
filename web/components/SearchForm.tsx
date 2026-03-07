@@ -2,6 +2,7 @@
 
 import { useState, FormEvent } from "react";
 import { SearchResponse } from "@/lib/types";
+import { clientSearch } from "@/lib/search-client";
 import { PriceQueryResult, queryPrices } from "@/lib/duckdb";
 import ResultsMap from "./ResultsMap";
 import ResultsList from "./ResultsList";
@@ -50,16 +51,7 @@ export default function SearchForm() {
     setPriceError(null);
 
     try {
-      const res = await fetch("/api/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ zipCode, codeType, codeValue }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        setError(json.error || "Search failed");
-        return;
-      }
+      const json = await clientSearch(zipCode, codeType, codeValue);
       setData(json);
 
       // Run DuckDB price query on the returned hospital parquet files
@@ -76,8 +68,8 @@ export default function SearchForm() {
           setPriceLoading(false);
         }
       }
-    } catch {
-      setError("Network error — please try again");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Search failed");
     } finally {
       setLoading(false);
     }
