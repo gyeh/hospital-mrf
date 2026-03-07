@@ -1,7 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "export",
   webpack: (config, { isServer }) => {
     // DuckDB-WASM requires async WASM support
     config.experiments = {
