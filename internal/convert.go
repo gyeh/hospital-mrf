@@ -534,34 +534,38 @@ func downloadURL(logger *slog.Logger, rawURL string) (localPath string, cleanup 
 	logger.Info("downloading", "url", rawURL)
 	start := time.Now()
 
-	req, err := http.NewRequest("GET", rawURL, nil)
-	if err != nil {
-		f.Close()
-		cleanupFn()
-		return "", nil, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-	req.Header.Set("Accept", "*/*")
+	const maxAttempts = 3
+	var n int64
+	var lastErr error
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		f.Close()
-		cleanupFn()
-		return "", nil, fmt.Errorf("HTTP GET: %w", err)
-	}
-	defer resp.Body.Close()
+	for attempt := range maxAttempts {
+		if attempt > 0 {
+			backoff := time.Duration(1<<(attempt-1)) * 2 * time.Second // 2s, 4s
+			logger.Info("retrying download", "attempt", attempt+1, "backoff", backoff.String(), "error", lastErr)
+			time.Sleep(backoff)
+			// Truncate the file for a fresh write.
+			if err := f.Truncate(0); err != nil {
+				f.Close()
+				cleanupFn()
+				return "", nil, fmt.Errorf("truncate temp file: %w", err)
+			}
+			if _, err := f.Seek(0, 0); err != nil {
+				f.Close()
+				cleanupFn()
+				return "", nil, fmt.Errorf("seek temp file: %w", err)
+			}
+		}
 
-	if resp.StatusCode != http.StatusOK {
-		f.Close()
-		cleanupFn()
-		return "", nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
+		n, lastErr = doDownload(f, rawURL)
+		if lastErr == nil {
+			break
+		}
 	}
 
-	n, err := io.Copy(f, resp.Body)
-	if err != nil {
+	if lastErr != nil {
 		f.Close()
 		cleanupFn()
-		return "", nil, fmt.Errorf("download: %w", err)
+		return "", nil, lastErr
 	}
 
 	if err := f.Close(); err != nil {
@@ -645,6 +649,32 @@ func extractZip(zipPath string) (string, error) {
 	tmp.Close()
 
 	return tmp.Name(), nil
+}
+
+// doDownload performs a single HTTP GET and writes the response body to w.
+func doDownload(w io.Writer, rawURL string) (int64, error) {
+	req, err := http.NewRequest("GET", rawURL, nil)
+	if err != nil {
+		return 0, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "*/*")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("HTTP GET: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
+	}
+
+	n, err := io.Copy(w, resp.Body)
+	if err != nil {
+		return n, fmt.Errorf("download: %w", err)
+	}
+	return n, nil
 }
 
 func fileSize(path string) int64 {
