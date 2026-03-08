@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { SearchResult } from "@/lib/types";
 import { ChargeRow } from "@/lib/duckdb";
+import { hospitalSlug } from "@/lib/search-client";
 
 interface Props {
   hospital: SearchResult;
@@ -41,8 +43,13 @@ export default function HospitalCard({
       }`}
     >
       <div className="flex items-start justify-between gap-2">
-        <h3 className="text-sm font-semibold leading-tight text-warm-900">
-          {hospital.hospitalName}
+        <h3 className="text-sm font-semibold leading-tight">
+          <Link
+            href={`/hospital/${hospitalSlug(hospital.outputFile)}`}
+            className="text-blue-700 hover:text-blue-900 hover:underline"
+          >
+            {hospital.hospitalName}
+          </Link>
         </h3>
         <span className="shrink-0 text-xs font-medium text-blue-600">
           {hospital.distanceMiles} mi

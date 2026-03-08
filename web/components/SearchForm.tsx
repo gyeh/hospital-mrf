@@ -7,7 +7,7 @@ import { PriceQueryResult, queryPrices } from "@/lib/duckdb";
 import ResultsMap from "./ResultsMap";
 import ResultsList from "./ResultsList";
 
-const CODE_TYPES = [
+export const CODE_TYPES = [
   "CPT",
   "HCPCS",
   "MS-DRG",
@@ -97,7 +97,11 @@ export default function SearchForm() {
     startProgress();
 
     try {
-      const json = await clientSearch(zipCode, codeType, codeValue);
+      // Show "Searching for hospitals" for at least 1.5s so the user sees it
+      const [json] = await Promise.all([
+        clientSearch(zipCode, codeType, codeValue),
+        new Promise((r) => setTimeout(r, 1500)),
+      ]);
       setData(json);
 
       // Run DuckDB price query on the returned hospital parquet files
@@ -223,6 +227,11 @@ export default function SearchForm() {
               style={{ width: `${progress}%` }}
             />
           </div>
+          <p className="mt-2 text-xs italic text-warm-400">
+            {priceLoading
+              ? `Searching for ${codeType} ${codeValue} across ${data?.results.length ?? 0} hospital files`
+              : `Searching for hospitals near ${zipCode}`}
+          </p>
         </div>
       )}
 

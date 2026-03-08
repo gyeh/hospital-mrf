@@ -119,6 +119,18 @@ const VALID_CODE_TYPES = new Set([
   "TRIS-DRG",
 ]);
 
+export function hospitalSlug(outputFile: string): string {
+  const filename = outputFile.split("/").pop() ?? "";
+  return filename.replace(/\.parquet$/, "");
+}
+
+export async function findHospitalBySlug(
+  slug: string
+): Promise<HospitalRecord | null> {
+  const hospitals = await loadHospitals();
+  return hospitals.find((h) => hospitalSlug(h.outputFile) === slug) ?? null;
+}
+
 export async function clientSearch(
   zipCode: string,
   codeType: string,
