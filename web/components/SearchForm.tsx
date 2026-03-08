@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, FormEvent } from "react";
+import { useState, useEffect, useRef, FormEvent } from "react";
 import { SearchResponse } from "@/lib/types";
 import { clientSearch } from "@/lib/search-client";
 import { PriceQueryResult, queryPrices } from "@/lib/duckdb";
@@ -41,6 +41,8 @@ export default function SearchForm() {
   const [priceData, setPriceData] = useState<PriceQueryResult | null>(null);
   const [priceLoading, setPriceLoading] = useState(false);
   const [priceError, setPriceError] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const progressInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     fetch("https://ipapi.co/json/")
@@ -57,6 +59,29 @@ export default function SearchForm() {
       .catch(() => {});
   }, []);
 
+  function startProgress() {
+    setProgress(0);
+    if (progressInterval.current) clearInterval(progressInterval.current);
+    const start = Date.now();
+    progressInterval.current = setInterval(() => {
+      const elapsed = (Date.now() - start) / 1000;
+      // Fast to ~40% in 2s, then slow approach toward 90% over ~14s
+      const fast = 40 * (1 - Math.exp(-elapsed / 1.2));
+      const slow = 50 * (1 - Math.exp(-elapsed / 8));
+      setProgress(Math.min(fast + slow, 92));
+    }, 100);
+  }
+
+  function stopProgress() {
+    if (progressInterval.current) {
+      clearInterval(progressInterval.current);
+      progressInterval.current = null;
+    }
+    setProgress(100);
+    // Reset after the bar fills
+    setTimeout(() => setProgress(0), 400);
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -64,6 +89,7 @@ export default function SearchForm() {
     setData(null);
     setPriceData(null);
     setPriceError(null);
+    startProgress();
 
     try {
       const json = await clientSearch(zipCode, codeType, codeValue);
@@ -87,6 +113,7 @@ export default function SearchForm() {
       setError(err instanceof Error ? err.message : "Search failed");
     } finally {
       setLoading(false);
+      stopProgress();
     }
   }
 
@@ -172,33 +199,25 @@ export default function SearchForm() {
         </div>
       )}
 
-      {/* Loading indicator while prices are being queried */}
+      {/* Loading progress bar */}
       {(loading || priceLoading) && (
-        <div className="flex items-center justify-center gap-3 rounded-xl border border-warm-200 bg-white py-12 shadow-sm">
-          <svg
-            className="h-5 w-5 animate-spin text-blue-600"
-            viewBox="0 0 24 24"
-            fill="none"
-          >
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
+        <div className="rounded-xl border border-warm-200 bg-white px-6 py-8 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-sm font-medium text-warm-700">
+              {loading
+                ? "Finding nearby hospitals..."
+                : `Querying prices across ${data?.results.length ?? 0} hospital files...`}
+            </span>
+            <span className="text-xs tabular-nums text-warm-400">
+              {Math.round(progress)}%
+            </span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-warm-100">
+            <div
+              className="h-full rounded-full bg-blue-600 transition-all duration-200 ease-out"
+              style={{ width: `${progress}%` }}
             />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-            />
-          </svg>
-          <span className="text-sm text-warm-600">
-            {loading
-              ? "Finding nearby hospitals..."
-              : `Querying prices across ${data?.results.length ?? 0} hospital files...`}
-          </span>
+          </div>
         </div>
       )}
 
