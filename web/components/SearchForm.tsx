@@ -72,14 +72,19 @@ export default function SearchForm() {
     }, 100);
   }
 
-  function stopProgress() {
-    if (progressInterval.current) {
-      clearInterval(progressInterval.current);
-      progressInterval.current = null;
-    }
-    setProgress(100);
-    // Reset after the bar fills
-    setTimeout(() => setProgress(0), 400);
+  function stopProgress(): Promise<void> {
+    return new Promise((resolve) => {
+      if (progressInterval.current) {
+        clearInterval(progressInterval.current);
+        progressInterval.current = null;
+      }
+      setProgress(100);
+      // Let the bar visually fill to 100% before resolving
+      setTimeout(() => {
+        setProgress(0);
+        resolve();
+      }, 500);
+    });
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -112,8 +117,8 @@ export default function SearchForm() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
     } finally {
+      await stopProgress();
       setLoading(false);
-      stopProgress();
     }
   }
 
