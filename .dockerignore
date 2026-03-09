@@ -1,0 +1,10 @@
+mount-sinai/
+hospitals/
+testdata/
+web/
+python/
+schemas/
+*.parquet
+*.jsonl
+.DS_Store
+.git
