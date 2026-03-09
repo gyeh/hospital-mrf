@@ -607,6 +607,20 @@ func downloadURL(logger *slog.Logger, rawURL string) (localPath string, cleanup 
 		}
 	}
 
+	// If the extension is ambiguous (e.g. .aspx, .csv default), sniff the
+	// file content to detect JSON vs CSV.
+	curExt := strings.ToLower(filepath.Ext(tmpPath))
+	if curExt != ".json" && curExt != ".zip" {
+		if sniffed := sniffFileType(tmpPath); sniffed != "" && sniffed != curExt {
+			newPath := strings.TrimSuffix(tmpPath, filepath.Ext(tmpPath)) + sniffed
+			if err := os.Rename(tmpPath, newPath); err == nil {
+				logger.Info("detected format from content", "format", sniffed)
+				tmpPath = newPath
+				cleanupFn = func() { os.Remove(newPath) }
+			}
+		}
+	}
+
 	// If the downloaded file is a zip, extract the first CSV/JSON from it.
 	if strings.HasSuffix(strings.ToLower(tmpPath), ".zip") {
 		extracted, err := extractZip(tmpPath)
@@ -816,11 +830,93 @@ func doDownload(w io.Writer, rawURL string) (downloadResult, error) {
 		}
 	}
 
-	n, err := io.Copy(w, resp.Body)
-	if err != nil {
-		return downloadResult{N: n}, fmt.Errorf("download: %w", err)
+	// Copy with speed check: after 2 minutes of downloading, if the
+	// estimated remaining time exceeds 15 minutes, abort.
+	const (
+		steadyStateAfter = 2 * time.Minute
+		maxETA           = 15 * time.Minute
+		checkInterval    = 10 * time.Second
+	)
+
+	contentLength := resp.ContentLength // -1 if unknown
+	dlStart := time.Now()
+	lastCheck := dlStart
+	var totalBytes int64
+
+	buf := make([]byte, 256*1024)
+	for {
+		nr, readErr := resp.Body.Read(buf)
+		if nr > 0 {
+			nw, writeErr := w.Write(buf[:nr])
+			totalBytes += int64(nw)
+			if writeErr != nil {
+				return downloadResult{N: totalBytes}, fmt.Errorf("download: %w", writeErr)
+			}
+		}
+
+		if readErr != nil {
+			if readErr == io.EOF {
+				break
+			}
+			return downloadResult{N: totalBytes}, fmt.Errorf("download: %w", readErr)
+		}
+
+		now := time.Now()
+		if contentLength > 0 && now.Sub(lastCheck) >= checkInterval {
+			lastCheck = now
+			elapsed := now.Sub(dlStart)
+			if elapsed >= steadyStateAfter {
+				speed := float64(totalBytes) / elapsed.Seconds() // bytes/sec
+				if speed > 0 {
+					remaining := float64(contentLength-totalBytes) / speed
+					eta := time.Duration(remaining) * time.Second
+					if eta > maxETA {
+						return downloadResult{N: totalBytes}, fmt.Errorf(
+							"download too slow: %.1f MB downloaded in %s, ETA %s exceeds %s limit",
+							float64(totalBytes)/1024/1024,
+							elapsed.Round(time.Second),
+							eta.Round(time.Second),
+							maxETA,
+						)
+					}
+				}
+			}
+		}
 	}
-	return downloadResult{N: n, Filename: filename}, nil
+
+	return downloadResult{N: totalBytes, Filename: filename}, nil
+}
+
+// sniffFileType reads the first few bytes of a file to detect if it's JSON
+// or CSV. Returns ".json", ".csv", or "" if unknown.
+func sniffFileType(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	buf := make([]byte, 512)
+	n, err := f.Read(buf)
+	if err != nil || n == 0 {
+		return ""
+	}
+
+	// Skip BOM if present.
+	content := buf[:n]
+	if len(content) >= 3 && content[0] == 0xEF && content[1] == 0xBB && content[2] == 0xBF {
+		content = content[3:]
+	}
+
+	// Trim leading whitespace.
+	s := strings.TrimLeftFunc(string(content), func(r rune) bool {
+		return r == ' ' || r == '\t' || r == '\n' || r == '\r'
+	})
+
+	if len(s) > 0 && (s[0] == '{' || s[0] == '[') {
+		return ".json"
+	}
+	return ".csv"
 }
 
 func fileSize(path string) int64 {
