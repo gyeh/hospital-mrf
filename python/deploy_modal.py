@@ -207,16 +207,59 @@ def main(
 
     start = time.time()
 
-    try:
-        shard_outputs = list(run_shard.starmap(
-            [
-                (i, shard, out_dir, batch, skip_payer)
-                for i, shard in enumerate(entry_shards)
-            ]
-        ))
-    except Exception as e:
-        log(f"Processing failed: {e}")
-        sys.exit(1)
+    # Launch all shards concurrently, but collect results individually
+    # so a killed container doesn't lose all results.
+    shard_args = [
+        (i, shard, out_dir, batch, skip_payer)
+        for i, shard in enumerate(entry_shards)
+    ]
+
+    shard_outputs: list[bytes | None] = [None] * len(shard_args)
+
+    def run_all_shards(args_list, attempt=1):
+        """Launch shards concurrently via starmap, return indices that failed."""
+        failed = []
+        try:
+            results = list(run_shard.starmap(args_list))
+            for result, orig_args in zip(results, args_list):
+                idx = orig_args[0]
+                shard_outputs[idx] = result
+        except Exception as e:
+            # starmap fails entirely if any shard is killed.
+            # Fall back to individual calls for remaining shards.
+            log(f"starmap failed (attempt {attempt}): {e}")
+            for args in args_list:
+                idx = args[0]
+                if shard_outputs[idx] is not None:
+                    continue  # already got result
+                try:
+                    shard_outputs[idx] = run_shard.remote(*args)
+                except Exception as e2:
+                    log(f"Shard {idx} failed (attempt {attempt}): {e2}")
+                    failed.append(args)
+        return failed
+
+    # First attempt: all shards concurrently.
+    failed = run_all_shards(shard_args, attempt=1)
+
+    # Retry failed shards once.
+    if failed:
+        log(f"Retrying {len(failed)} failed shards...")
+        still_failed = run_all_shards(failed, attempt=2)
+
+        # Record permanently failed shards in output.
+        for args in still_failed:
+            idx, shard = args[0], args[1]
+            log(f"Shard {idx} permanently failed ({len(shard)} entries)")
+            failure_lines = []
+            for entry in shard:
+                failure_lines.append(json.dumps({
+                    "success": False,
+                    "url": entry.get("mrf-url", ""),
+                    "hospital_name": entry.get("location-name", "unknown"),
+                    "error": f"shard {idx} killed after 2 attempts",
+                }))
+            shard_outputs[idx] = ("\n".join(failure_lines) + "\n").encode()
 
     wall_time = time.time() - start
 
