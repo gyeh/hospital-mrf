@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -546,7 +547,7 @@ func downloadURL(logger *slog.Logger, rawURL string) (localPath string, cleanup 
 	start := time.Now()
 
 	const maxAttempts = 3
-	var n int64
+	var result downloadResult
 	var lastErr error
 
 	for attempt := range maxAttempts {
@@ -567,7 +568,7 @@ func downloadURL(logger *slog.Logger, rawURL string) (localPath string, cleanup 
 			}
 		}
 
-		n, lastErr = doDownload(f, rawURL)
+		result, lastErr = doDownload(f, rawURL)
 		if lastErr == nil {
 			break
 		}
@@ -584,12 +585,27 @@ func downloadURL(logger *slog.Logger, rawURL string) (localPath string, cleanup 
 		return "", nil, fmt.Errorf("close temp file: %w", err)
 	}
 
+	n := result.N
 	dlDuration := time.Since(start)
 	dlSpeedMBs := float64(n) / 1024 / 1024 / dlDuration.Seconds()
 	logger.Info("downloaded",
 		"size_mb", fmt.Sprintf("%.1f", float64(n)/1024/1024),
 		"duration", dlDuration.Round(time.Millisecond).String(),
 		"speed_mb_s", fmt.Sprintf("%.1f", dlSpeedMBs))
+
+	// If Content-Disposition provided a filename with a different extension,
+	// rename the temp file so format detection works correctly.
+	if result.Filename != "" {
+		cdExt := strings.ToLower(filepath.Ext(result.Filename))
+		if cdExt != "" && cdExt != strings.ToLower(filepath.Ext(tmpPath)) {
+			newPath := strings.TrimSuffix(tmpPath, filepath.Ext(tmpPath)) + cdExt
+			if err := os.Rename(tmpPath, newPath); err == nil {
+				logger.Info("renamed from Content-Disposition", "filename", result.Filename)
+				tmpPath = newPath
+				cleanupFn = func() { os.Remove(newPath) }
+			}
+		}
+	}
 
 	// If the downloaded file is a zip, extract the first CSV/JSON from it.
 	if strings.HasSuffix(strings.ToLower(tmpPath), ".zip") {
@@ -767,30 +783,44 @@ var chromeClient = &http.Client{
 	},
 }
 
+// downloadResult holds the result of a single HTTP download.
+type downloadResult struct {
+	N        int64
+	Filename string // from Content-Disposition, if present
+}
+
 // doDownload performs a single HTTP GET and writes the response body to w.
-func doDownload(w io.Writer, rawURL string) (int64, error) {
+func doDownload(w io.Writer, rawURL string) (downloadResult, error) {
 	req, err := http.NewRequest("GET", rawURL, nil)
 	if err != nil {
-		return 0, fmt.Errorf("create request: %w", err)
+		return downloadResult{}, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
 	req.Header.Set("Accept", "*/*")
 
 	resp, err := chromeClient.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("HTTP GET: %w", err)
+		return downloadResult{}, fmt.Errorf("HTTP GET: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
+		return downloadResult{}, fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
+	}
+
+	// Extract filename from Content-Disposition header if present.
+	var filename string
+	if cd := resp.Header.Get("Content-Disposition"); cd != "" {
+		if _, params, err := mime.ParseMediaType(cd); err == nil {
+			filename = params["filename"]
+		}
 	}
 
 	n, err := io.Copy(w, resp.Body)
 	if err != nil {
-		return n, fmt.Errorf("download: %w", err)
+		return downloadResult{N: n}, fmt.Errorf("download: %w", err)
 	}
-	return n, nil
+	return downloadResult{N: n, Filename: filename}, nil
 }
 
 func fileSize(path string) int64 {
