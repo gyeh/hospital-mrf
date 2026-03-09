@@ -2,14 +2,18 @@ package internal
 
 import (
 	"archive/zip"
+	"bufio"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path"
 	"path/filepath"
@@ -19,6 +23,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	utls "github.com/refraction-networking/utls"
+	"golang.org/x/net/http2"
 )
 
 // chargeReader is the common interface for CSV and JSON readers.
@@ -504,6 +510,11 @@ func isURL(s string) bool {
 // extension so format detection works. Returns the temp file path and a
 // cleanup function that removes the temp file.
 func downloadURL(logger *slog.Logger, rawURL string) (localPath string, cleanup func(), err error) {
+	// Upgrade http:// to https:// to avoid WAF/CDN challenges (e.g. Sucuri).
+	if strings.HasPrefix(rawURL, "http://") {
+		rawURL = "https://" + strings.TrimPrefix(rawURL, "http://")
+	}
+
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return "", nil, fmt.Errorf("parse URL: %w", err)
@@ -589,7 +600,14 @@ func downloadURL(logger *slog.Logger, rawURL string) (localPath string, cleanup 
 		}
 		// Clean up the zip file, return the extracted file instead.
 		os.Remove(tmpPath)
-		extractedCleanup := func() { os.Remove(extracted) }
+		extractedDir := filepath.Dir(extracted)
+		extractedCleanup := func() {
+			os.Remove(extracted)
+			// Remove temp dir if extractZipExternal created one.
+			if extractedDir != os.TempDir() {
+				os.RemoveAll(extractedDir)
+			}
+		}
 		logger.Info("extracted",
 			"file", filepath.Base(extracted),
 			"size_mb", fmt.Sprintf("%.1f", float64(fileSize(extracted))/1024/1024))
@@ -632,7 +650,9 @@ func extractZip(zipPath string) (string, error) {
 
 	rc, err := target.Open()
 	if err != nil {
-		return "", fmt.Errorf("open %s in zip: %w", target.Name, err)
+		// Fallback to system unzip for unsupported compression (e.g. Deflate64).
+		r.Close()
+		return extractZipExternal(zipPath, target.Name)
 	}
 	defer rc.Close()
 
@@ -651,6 +671,102 @@ func extractZip(zipPath string) (string, error) {
 	return tmp.Name(), nil
 }
 
+// extractZipExternal uses the system unzip command to extract a file from a
+// zip archive. This handles compression methods that Go's archive/zip doesn't
+// support (e.g. Deflate64/method 9).
+func extractZipExternal(zipPath, targetName string) (string, error) {
+	tmpDir, err := os.MkdirTemp("", "hospital-loader-unzip-*")
+	if err != nil {
+		return "", fmt.Errorf("create temp dir: %w", err)
+	}
+
+	cmd := exec.Command("unzip", "-o", "-d", tmpDir, zipPath, targetName)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		os.RemoveAll(tmpDir)
+		return "", fmt.Errorf("unzip %s: %w: %s", targetName, err, out)
+	}
+
+	extracted := filepath.Join(tmpDir, targetName)
+	if _, err := os.Stat(extracted); err != nil {
+		os.RemoveAll(tmpDir)
+		return "", fmt.Errorf("extracted file not found: %s", targetName)
+	}
+
+	return extracted, nil
+}
+
+// utlsTransport is an http.RoundTripper that uses a Chrome TLS fingerprint.
+// It checks the negotiated ALPN protocol and delegates to either the HTTP/2
+// or HTTP/1.1 transport accordingly.
+type utlsTransport struct {
+	h1 *http.Transport
+	h2 *http2.Transport
+}
+
+func (t *utlsTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// For non-HTTPS, use default transport.
+	if req.URL.Scheme != "https" {
+		return t.h1.RoundTrip(req)
+	}
+
+	addr := req.URL.Host
+	if !strings.Contains(addr, ":") {
+		addr += ":443"
+	}
+
+	conn, err := net.DialTimeout("tcp", addr, 30*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("dial %s: %w", addr, err)
+	}
+
+	host, _, _ := net.SplitHostPort(addr)
+	tlsConn := utls.UClient(conn, &utls.Config{ServerName: host}, utls.HelloChrome_Auto)
+	if err := tlsConn.HandshakeContext(req.Context()); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("TLS handshake: %w", err)
+	}
+
+	alpn := tlsConn.ConnectionState().NegotiatedProtocol
+	if alpn == "h2" {
+		return t.h2.RoundTrip(req)
+	}
+
+	// HTTP/1.1: write request and read response directly.
+	if err := req.Write(tlsConn); err != nil {
+		tlsConn.Close()
+		return nil, fmt.Errorf("write request: %w", err)
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(tlsConn), req)
+	if err != nil {
+		tlsConn.Close()
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+	return resp, nil
+}
+
+var chromeClient = &http.Client{
+	Transport: &utlsTransport{
+		h1: &http.Transport{
+			DialContext: (&net.Dialer{Timeout: 30 * time.Second}).DialContext,
+		},
+		h2: &http2.Transport{
+			DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+				conn, err := net.DialTimeout(network, addr, 30*time.Second)
+				if err != nil {
+					return nil, err
+				}
+				host, _, _ := net.SplitHostPort(addr)
+				tlsConn := utls.UClient(conn, &utls.Config{ServerName: host}, utls.HelloChrome_Auto)
+				if err := tlsConn.HandshakeContext(ctx); err != nil {
+					conn.Close()
+					return nil, err
+				}
+				return tlsConn, nil
+			},
+		},
+	},
+}
+
 // doDownload performs a single HTTP GET and writes the response body to w.
 func doDownload(w io.Writer, rawURL string) (int64, error) {
 	req, err := http.NewRequest("GET", rawURL, nil)
@@ -660,7 +776,7 @@ func doDownload(w io.Writer, rawURL string) (int64, error) {
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
 	req.Header.Set("Accept", "*/*")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := chromeClient.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("HTTP GET: %w", err)
 	}

@@ -1,6 +1,6 @@
 module pricetool
 
-go 1.24.9
+go 1.25.0
 
 require (
 	github.com/fergusstrange/embedded-postgres v1.33.0
@@ -39,13 +39,15 @@ require (
 	github.com/parquet-go/jsonlite v1.0.0 // indirect
 	github.com/parquet-go/parquet-go v0.28.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.21 // indirect
+	github.com/refraction-networking/utls v1.8.2 // indirect
 	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/twpayne/go-geom v1.6.1 // indirect
 	github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8 // indirect
-	golang.org/x/crypto v0.9.0 // indirect
-	golang.org/x/sync v0.1.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
-	golang.org/x/text v0.9.0 // indirect
+	golang.org/x/crypto v0.48.0 // indirect
+	golang.org/x/net v0.51.0 // indirect
+	golang.org/x/sync v0.19.0 // indirect
+	golang.org/x/sys v0.41.0 // indirect
+	golang.org/x/text v0.34.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 )

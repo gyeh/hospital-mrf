@@ -20,7 +20,7 @@ func (f *FlexibleFloat) UnmarshalJSON(data []byte) error {
 	}
 	var str string
 	if err := json.Unmarshal(data, &str); err == nil {
-		cleaned := strings.ReplaceAll(str, ",", "")
+		cleaned := strings.TrimSpace(strings.ReplaceAll(str, ",", ""))
 		if cleaned == "" {
 			f.Value = nil
 			return nil
