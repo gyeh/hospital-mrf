@@ -830,11 +830,11 @@ func doDownload(w io.Writer, rawURL string) (downloadResult, error) {
 		}
 	}
 
-	// Copy with speed check: after 2 minutes of downloading, if the
-	// estimated remaining time exceeds 15 minutes, abort.
+	// Copy with speed check: after 1 minutes of downloading, if the
+	// estimated remaining time exceeds 10 minutes, abort.
 	const (
-		steadyStateAfter = 2 * time.Minute
-		maxETA           = 15 * time.Minute
+		steadyStateAfter = 1 * time.Minute
+		maxETA           = 10 * time.Minute
 		checkInterval    = 10 * time.Second
 	)
 
