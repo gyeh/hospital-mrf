@@ -3,7 +3,9 @@ package main
 import (
 	"log/slog"
 	"os"
+	"time"
 
+	"github.com/lmittmann/tint"
 	"github.com/spf13/cobra"
 )
 
@@ -18,7 +20,9 @@ Use "hospital-loader single" to convert a single file, or
 }
 
 func init() {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	slog.SetDefault(slog.New(tint.NewHandler(os.Stderr, &tint.Options{
+		TimeFormat: time.Kitchen,
+	})))
 	rootCmd.AddCommand(singleCmd)
 	rootCmd.AddCommand(batchCmd)
 	rootCmd.AddCommand(geocodeCmd)
