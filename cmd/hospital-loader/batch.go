@@ -160,30 +160,30 @@ func init() {
 
 // processBatchEntry processes a single entry and prints status. Returns true on success.
 func processBatchEntry(logger *slog.Logger, entry jsonlEntry, outDir, logPath string, batchSize int, skipPayer bool) bool {
-	name := entry.LocationName
-	if name == "" {
-		name = "unknown"
+	hospitalName := entry.LocationName
+	if hospitalName == "" {
+		hospitalName = "unknown"
 	}
 	url := entry.MRFUrl
 
 	if url == "" {
-		logger.Warn("skip: no mrf-url", "name", name)
+		logger.Warn("skip: no mrf-url", "hospitalName", hospitalName)
 		return false
 	}
 
-	logger.Info("processing", "name", name, "url", url)
+	logger.Info("processing", "hospitalName", hospitalName, "url", url)
 
 	// Pass the directory with trailing slash; ProcessEntry derives
 	// the filename from hospital metadata.
 	outPath := ensureTrailingSlash(outDir)
 
-	err := internal.ProcessEntry(logger, url, outPath, logPath, batchSize, skipPayer)
+	err := internal.ProcessEntry(logger, url, outPath, logPath, batchSize, skipPayer, hospitalName)
 	if err == nil {
-		logger.Info("completed", "name", name)
+		logger.Info("completed", "hospitalName", hospitalName)
 		return true
 	}
 
-	logger.Error("failed", "name", name, "error", err)
+	logger.Error("failed", "hospitalName", hospitalName, "error", err)
 	return false
 }
 

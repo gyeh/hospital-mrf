@@ -23,6 +23,7 @@ Examples:
 		batch, _ := cmd.Flags().GetInt("batch")
 		skipPayer, _ := cmd.Flags().GetBool("skip-payer-charges")
 		logPath, _ := cmd.Flags().GetString("log")
+		hospitalName, _ := cmd.Flags().GetString("hospitalName")
 
 		if file == "" {
 			slog.Error("--file is required")
@@ -30,7 +31,7 @@ Examples:
 			os.Exit(1)
 		}
 
-		if err := internal.ProcessEntry(slog.Default(), file, out, logPath, batch, skipPayer); err != nil {
+		if err := internal.ProcessEntry(slog.Default(), file, out, logPath, batch, skipPayer, hospitalName); err != nil {
 			slog.Error("conversion failed", "error", err)
 			os.Exit(1)
 		}
@@ -47,4 +48,5 @@ func init() {
 	singleCmd.Flags().Int("batch", 10000, "Batch size for Parquet writes")
 	singleCmd.Flags().Bool("skip-payer-charges", true, "Skip payer-specific negotiated rates")
 	singleCmd.Flags().String("log", "hospital-loader-log.jsonl", "JSONL log file path")
+	singleCmd.Flags().String("name", "", "CMS HPT location name for log entry")
 }

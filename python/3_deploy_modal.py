@@ -124,6 +124,7 @@ def run_shard(
             "--batch", str(batch_size),
             f"--skip-payer-charges={str(skip_payer).lower()}",
             "--log", log_path,
+            "--hospitalName", name,
         ]
 
         proc = sp.run(cmd, capture_output=True, text=True)

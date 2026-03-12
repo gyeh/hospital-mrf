@@ -45,22 +45,23 @@ type geocodeResult struct {
 }
 
 type logEntry struct {
-	Success           bool            `json:"success"`
-	InputFormat       string          `json:"input_format"`
-	URL               string          `json:"url"`
-	StartTime         string          `json:"start_time"`
-	DurationSeconds   float64         `json:"duration_seconds"`
-	Error             string          `json:"error,omitempty"`
-	OutputFile        string          `json:"output_file,omitempty"`
-	HospitalName      string          `json:"hospital_name"`
-	LocationNames     []string        `json:"location_names"`
-	HospitalAddresses []string        `json:"hospital_addresses"`
-	LicenseNumber     *string         `json:"license_number"`
-	LicenseState      *string         `json:"license_state"`
-	Type2NPIs         []string        `json:"type_2_npis"`
-	LastUpdatedOn     string          `json:"last_updated_on"`
-	SchemaVersion     string          `json:"schema_version"`
-	Geocodes          []geocodeResult `json:"geocodes,omitempty"`
+	Success            bool            `json:"success"`
+	InputFormat        string          `json:"input_format"`
+	URL                string          `json:"url"`
+	StartTime          string          `json:"start_time"`
+	DurationSeconds    float64         `json:"duration_seconds"`
+	Error              string          `json:"error,omitempty"`
+	OutputFile         string          `json:"output_file,omitempty"`
+	HospitalName       string          `json:"hospital_name"`
+	LocationNames      []string        `json:"location_names"`
+	HospitalAddresses  []string        `json:"hospital_addresses"`
+	LicenseNumber      *string         `json:"license_number"`
+	LicenseState       *string         `json:"license_state"`
+	Type2NPIs          []string        `json:"type_2_npis"`
+	LastUpdatedOn      string          `json:"last_updated_on"`
+	SchemaVersion      string          `json:"schema_version"`
+	Geocodes           []geocodeResult `json:"geocodes,omitempty"`
+	CMSHPTLocationName string          `json:"cms_hpt_location_name,omitempty"`
 }
 
 // ProcessEntry handles a single file conversion: URL download, convert, log.
@@ -74,7 +75,7 @@ type logEntry struct {
 //
 // When outputFile is empty or a directory, the filename is derived from
 // hospital metadata: {hospital_name}-{license_number}-{last_updated_on}.parquet
-func ProcessEntry(logger *slog.Logger, inputFile, outputFile, logFile string, batchSize int, skipPayerCharges bool) error {
+func ProcessEntry(logger *slog.Logger, inputFile, outputFile, logFile string, batchSize int, skipPayerCharges bool, hospitalName string) error {
 	startTime := time.Now()
 	inputDisplay := inputFile
 	var meta RunMeta
@@ -94,19 +95,20 @@ func ProcessEntry(logger *slog.Logger, inputFile, outputFile, logFile string, ba
 		}
 
 		entry := logEntry{
-			Success:           processErr == nil,
-			InputFormat:       inputFormat,
-			URL:               inputDisplay,
-			StartTime:         startTime.Format(time.RFC3339),
-			DurationSeconds:   time.Since(startTime).Seconds(),
-			HospitalName:      meta.HospitalName,
-			LocationNames:     meta.LocationNames,
-			HospitalAddresses: meta.HospitalAddresses,
-			LicenseNumber:     meta.LicenseNumber,
-			LicenseState:      meta.LicenseState,
-			Type2NPIs:         meta.Type2NPIs,
-			LastUpdatedOn:     meta.LastUpdatedOn,
-			SchemaVersion:     meta.Version,
+			Success:            processErr == nil,
+			InputFormat:        inputFormat,
+			URL:                inputDisplay,
+			StartTime:          startTime.Format(time.RFC3339),
+			DurationSeconds:    time.Since(startTime).Seconds(),
+			HospitalName:       meta.HospitalName,
+			LocationNames:      meta.LocationNames,
+			HospitalAddresses:  meta.HospitalAddresses,
+			LicenseNumber:      meta.LicenseNumber,
+			LicenseState:       meta.LicenseState,
+			Type2NPIs:          meta.Type2NPIs,
+			LastUpdatedOn:      meta.LastUpdatedOn,
+			SchemaVersion:      meta.Version,
+			CMSHPTLocationName: hospitalName,
 		}
 		if processErr != nil {
 			entry.Error = processErr.Error()
