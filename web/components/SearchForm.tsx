@@ -33,6 +33,7 @@ export default function SearchForm() {
   const [zipCode, setZipCode] = useState("");
   const [codeType, setCodeType] = useState("CPT");
   const [codeValue, setCodeValue] = useState("");
+  const [radius, setRadius] = useState(40);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<SearchResponse | null>(null);
@@ -99,7 +100,7 @@ export default function SearchForm() {
     try {
       // Show "Searching for hospitals" for at least 1.5s so the user sees it
       const [json] = await Promise.all([
-        clientSearch(zipCode, codeType, codeValue),
+        clientSearch(zipCode, codeType, codeValue, radius),
         new Promise((r) => setTimeout(r, 1500)),
       ]);
       setData(json);
@@ -132,28 +133,6 @@ export default function SearchForm() {
         onSubmit={handleSubmit}
         className="flex flex-wrap items-end gap-3 rounded-xl border border-warm-200 bg-white p-4 shadow-sm"
       >
-        <div className="flex flex-col gap-1">
-          <label
-            htmlFor="zipCode"
-            className="text-xs font-medium text-warm-600"
-          >
-            Zip Code
-          </label>
-          <input
-            id="zipCode"
-            type="text"
-            inputMode="numeric"
-            maxLength={5}
-            placeholder="10001"
-            value={zipCode}
-            onChange={(e) =>
-              setZipCode(e.target.value.replace(/\D/g, "").slice(0, 5))
-            }
-            className="h-10 w-28 rounded-lg border border-warm-300 bg-warm-50 px-3 text-sm text-warm-900 placeholder:text-warm-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            required
-          />
-        </div>
-
         <div className="flex flex-col gap-1">
           <label
             htmlFor="codeType"
@@ -190,6 +169,47 @@ export default function SearchForm() {
             onChange={(e) => setCodeValue(e.target.value)}
             className="h-10 w-32 rounded-lg border border-warm-300 bg-warm-50 px-3 text-sm text-warm-900 placeholder:text-warm-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             required
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label
+            htmlFor="zipCode"
+            className="text-xs font-medium text-warm-600"
+          >
+            Zip Code
+          </label>
+          <input
+            id="zipCode"
+            type="text"
+            inputMode="numeric"
+            maxLength={5}
+            placeholder="10001"
+            value={zipCode}
+            onChange={(e) =>
+              setZipCode(e.target.value.replace(/\D/g, "").slice(0, 5))
+            }
+            className="h-10 w-28 rounded-lg border border-warm-300 bg-warm-50 px-3 text-sm text-warm-900 placeholder:text-warm-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            required
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label
+            htmlFor="radius"
+            className="text-xs font-medium text-warm-600"
+          >
+            Radius: {radius} mi
+          </label>
+          <input
+            id="radius"
+            type="range"
+            min={5}
+            max={80}
+            step={5}
+            value={radius}
+            onChange={(e) => setRadius(Number(e.target.value))}
+            className="h-10 w-28 accent-blue-600"
           />
         </div>
 

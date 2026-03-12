@@ -165,7 +165,7 @@ export async function clientSearch(
     coords.lat,
     coords.lon,
     radius ?? 40,
-    limit ?? 30
+    limit ?? 300
   );
 
   return {
