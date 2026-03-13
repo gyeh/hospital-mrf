@@ -48,5 +48,5 @@ func init() {
 	singleCmd.Flags().Int("batch", 10000, "Batch size for Parquet writes")
 	singleCmd.Flags().Bool("skip-payer-charges", true, "Skip payer-specific negotiated rates")
 	singleCmd.Flags().String("log", "hospital-loader-log.jsonl", "JSONL log file path")
-	singleCmd.Flags().String("name", "", "CMS HPT location name for log entry")
+	singleCmd.Flags().String("hospitalName", "", "CMS HPT location name for log entry")
 }

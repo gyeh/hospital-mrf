@@ -554,7 +554,7 @@ func downloadURL(logger *slog.Logger, rawURL string) (localPath string, cleanup 
 
 	for attempt := range maxAttempts {
 		if attempt > 0 {
-			backoff := time.Duration(1<<(attempt-1)) * 2 * time.Second // 2s, 4s
+			backoff := time.Duration(1<<(attempt-1)) * 15 * time.Second // 15s, 30s
 			logger.Info("retrying download", "attempt", attempt+1, "backoff", backoff.String(), "error", lastErr)
 			time.Sleep(backoff)
 			// Truncate the file for a fresh write.
