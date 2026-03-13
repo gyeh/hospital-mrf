@@ -12,6 +12,7 @@ interface RawEntry {
   success: boolean;
   output_file?: string;
   hospital_name: string;
+  cms_hpt_location_name?: string;
   hospital_addresses: string[] | null;
   license_number: string | null;
   license_state: string | null;
@@ -55,7 +56,7 @@ async function loadHospitals(): Promise<HospitalRecord[]> {
         : "";
 
     records.push({
-      hospitalName: entry.hospital_name,
+      hospitalName: entry.cms_hpt_location_name || entry.hospital_name,
       address,
       lat: geo.latitude,
       lon: geo.longitude,
