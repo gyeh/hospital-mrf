@@ -261,13 +261,7 @@ export default function SearchForm() {
           (h) => (priceData.chargesByHospital[h.hospitalName]?.length ?? 0) > 0
         );
         return filteredResults.length > 0 ? (
-          <div className="grid gap-6 lg:grid-cols-2">
-            <ResultsMap
-              results={filteredResults}
-              center={data.center}
-              hoveredHospital={hoveredHospital}
-              onHoverHospital={setHoveredHospital}
-            />
+          <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
             <ResultsList
               results={filteredResults}
               codeType={codeType}
@@ -278,6 +272,14 @@ export default function SearchForm() {
               priceLoading={false}
               priceError={priceError}
             />
+            <div className="lg:sticky lg:top-4 lg:self-start">
+              <ResultsMap
+                results={filteredResults}
+                center={data.center}
+                hoveredHospital={hoveredHospital}
+                onHoverHospital={setHoveredHospital}
+              />
+            </div>
           </div>
         ) : (
           <div className="rounded-xl border border-warm-200 bg-white py-12 text-center shadow-sm">

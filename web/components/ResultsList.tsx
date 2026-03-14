@@ -45,7 +45,7 @@ export default function ResultsList({
         </div>
       )}
 
-      <div className="flex max-h-[600px] flex-col gap-2 overflow-y-auto pr-1">
+      <div className="flex flex-col gap-2">
         {results.map((hospital) => (
           <HospitalCard
             key={hospital.hospitalName + hospital.address}
