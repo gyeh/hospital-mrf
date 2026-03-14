@@ -98,6 +98,17 @@ def main():
         sys.exit(1)
     log(f"Output dir: {out_dir}")
 
+    # Rebuild the Go CLI binary before running.
+    log("Building hospital-loader binary...")
+    build_result = subprocess.run(
+        ["go", "build", "-o", args.binary, "./cmd/hospital-loader"],
+        cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    )
+    if build_result.returncode != 0:
+        log("ERROR: go build failed")
+        sys.exit(1)
+    log("Build succeeded")
+
     # Build URL -> location-name lookup from the original input file.
     url_to_name = {}
     if os.path.exists(args.lookup):

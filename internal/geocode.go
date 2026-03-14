@@ -42,7 +42,7 @@ func GeocodeLogFile(logFile string) error {
 	var skipped int
 	var alreadyGeocoded int
 	for _, e := range entries {
-		if len(e.Geocodes) > 0 {
+		if hasGeocodedLocation(e.Geocodes) {
 			alreadyGeocoded++
 			continue
 		}
@@ -214,6 +214,16 @@ func GeocodeLogFile(logFile string) error {
 
 	// Rewrite the log file.
 	return writeLogEntries(logFile, entries)
+}
+
+// hasGeocodedLocation returns true if any geocode entry has a valid lat/lon.
+func hasGeocodedLocation(geocodes []geocodeResult) bool {
+	for _, g := range geocodes {
+		if g.Latitude != 0 || g.Longitude != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // cleanAddress normalizes an address for the Census geocoder.
