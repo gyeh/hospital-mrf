@@ -266,13 +266,14 @@ export default function SearchForm() {
               results={filteredResults}
               codeType={codeType}
               codeValue={codeValue}
+              zipCode={zipCode}
               hoveredHospital={hoveredHospital}
               onHoverHospital={setHoveredHospital}
               priceData={priceData}
               priceLoading={false}
               priceError={priceError}
             />
-            <div className="lg:sticky lg:top-4 lg:self-start">
+            <div className="lg:sticky lg:top-0 lg:self-start">
               <ResultsMap
                 results={filteredResults}
                 center={data.center}

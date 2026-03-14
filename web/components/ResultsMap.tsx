@@ -25,13 +25,11 @@ export default function ResultsMap({
 
   const bounds = useMemo(() => {
     if (results.length === 0) return undefined;
-    const maxDist = Math.max(...results.map((r) => r.distanceMiles), 5);
-    const pad = maxDist * 0.02;
     const lats = [center.lat, ...results.map((r) => r.lat)];
     const lons = [center.lon, ...results.map((r) => r.lon)];
     return [
-      [Math.min(...lons) - pad, Math.min(...lats) - pad],
-      [Math.max(...lons) + pad, Math.max(...lats) + pad],
+      [Math.min(...lons), Math.min(...lats)],
+      [Math.max(...lons), Math.max(...lats)],
     ] as [[number, number], [number, number]];
   }, [results, center]);
 
@@ -55,10 +53,11 @@ export default function ResultsMap({
           latitude: center.lat,
           zoom: 10,
           bounds,
-          fitBoundsOptions: { padding: 50 },
+          fitBoundsOptions: { padding: 80 },
         }}
         style={{ width: "100%", height: 500 }}
-        mapStyle="mapbox://styles/mapbox/light-v11"
+        mapStyle="mapbox://styles/mapbox/streets-v12"
+        attributionControl={false}
       >
         <NavigationControl position="top-right" />
 

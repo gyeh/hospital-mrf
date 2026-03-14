@@ -20,3 +20,7 @@ body {
   background: var(--color-warm-50);
   color: var(--color-warm-900);
 }
+
+.mapboxgl-ctrl-logo {
+  display: none !important;
+}

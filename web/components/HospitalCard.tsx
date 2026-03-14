@@ -8,6 +8,7 @@ import { hospitalSlug } from "@/lib/search-client";
 
 interface Props {
   hospital: SearchResult;
+  zipCode: string;
   isHovered: boolean;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
@@ -21,8 +22,13 @@ function formatCurrency(value: number | null): string {
 
 const INITIAL_ROWS = 5;
 
+function googleMapsDirectionsUrl(origin: string, destination: string): string {
+  return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`;
+}
+
 export default function HospitalCard({
   hospital,
+  zipCode,
   isHovered,
   onMouseEnter,
   onMouseLeave,
@@ -55,7 +61,16 @@ export default function HospitalCard({
           {hospital.distanceMiles} mi
         </span>
       </div>
-      <p className="mt-1 text-xs text-warm-600">{hospital.address}</p>
+      {hospital.address && (
+        <a
+          href={googleMapsDirectionsUrl(zipCode, hospital.address)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-1 block text-xs text-warm-600 hover:text-blue-600 hover:underline"
+        >
+          {hospital.address}
+        </a>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {hospital.licenseState && (
           <span className="rounded-md bg-warm-100 px-2 py-0.5 text-xs font-medium text-warm-700">

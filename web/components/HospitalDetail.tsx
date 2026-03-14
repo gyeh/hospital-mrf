@@ -106,7 +106,16 @@ export default function HospitalDetail({ slug }: { slug: string }) {
         <h2 className="text-lg font-semibold text-warm-900">
           {hospital.hospitalName}
         </h2>
-        <p className="mt-1 text-sm text-warm-600">{hospital.address}</p>
+        {hospital.address && (
+          <a
+            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(hospital.address)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 block text-sm text-warm-600 hover:text-blue-600 hover:underline"
+          >
+            {hospital.address}
+          </a>
+        )}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {hospital.licenseState && (
             <span className="rounded-md bg-warm-100 px-2 py-0.5 text-xs font-medium text-warm-700">

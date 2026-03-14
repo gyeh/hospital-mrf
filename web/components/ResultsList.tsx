@@ -8,6 +8,7 @@ interface Props {
   results: SearchResult[];
   codeType: string;
   codeValue: string;
+  zipCode: string;
   hoveredHospital: string | null;
   onHoverHospital: (name: string | null) => void;
   priceData: PriceQueryResult | null;
@@ -19,6 +20,7 @@ export default function ResultsList({
   results,
   codeType,
   codeValue,
+  zipCode,
   hoveredHospital,
   onHoverHospital,
   priceData,
@@ -50,6 +52,7 @@ export default function ResultsList({
           <HospitalCard
             key={hospital.hospitalName + hospital.address}
             hospital={hospital}
+            zipCode={zipCode}
             isHovered={hoveredHospital === hospital.hospitalName}
             onMouseEnter={() => onHoverHospital(hospital.hospitalName)}
             onMouseLeave={() => onHoverHospital(null)}
