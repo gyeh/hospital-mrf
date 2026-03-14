@@ -35,11 +35,17 @@ func GeocodeLogFile(logFile string) error {
 	// Collect unique addresses, assigning each a numeric ID.
 	// rawToClean maps the original address to its cleaned form.
 	// addrToID maps cleaned address → ID for the Census API.
+	// Skip entries that already have geocode results.
 	rawToClean := make(map[string]string)
 	addrToID := make(map[string]int)
 	var orderedAddrs []string
 	var skipped int
+	var alreadyGeocoded int
 	for _, e := range entries {
+		if len(e.Geocodes) > 0 {
+			alreadyGeocoded++
+			continue
+		}
 		for _, raw := range e.HospitalAddresses {
 			raw = strings.TrimSpace(raw)
 			if raw == "" {
@@ -63,10 +69,13 @@ func GeocodeLogFile(logFile string) error {
 	}
 
 	if len(orderedAddrs) == 0 {
+		if alreadyGeocoded > 0 {
+			slog.Info("geocoding skipped, all entries already geocoded", "already_geocoded", alreadyGeocoded)
+		}
 		return nil
 	}
 
-	slog.Info("geocoding", "unique_addresses", len(orderedAddrs), "skipped_invalid", skipped)
+	slog.Info("geocoding", "unique_addresses", len(orderedAddrs), "skipped_invalid", skipped, "already_geocoded", alreadyGeocoded)
 
 	// Build reverse map: id → address string.
 	idToAddr := make(map[int]string, len(orderedAddrs))

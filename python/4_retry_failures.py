@@ -2,6 +2,8 @@
 """
 Retry failed entries from a hospital-loader log file.
 
+Common reasons for failure (1) CDN more inclined to block AWS/cloud IP addresses
+
 Reads a JSONL log (output of 3_deploy_modal.py or the Go CLI batch command),
 extracts failed entries, and re-runs them through `hospital-loader batch`.
 The S3 output directory is inferred from successful entries in the log.
