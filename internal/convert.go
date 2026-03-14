@@ -3,6 +3,7 @@ package internal
 import (
 	"archive/zip"
 	"bufio"
+	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -609,6 +610,21 @@ func downloadURL(logger *slog.Logger, rawURL string) (localPath string, cleanup 
 		}
 	}
 
+	// If the file starts with gzip magic bytes (0x1f 0x8b), decompress it.
+	// Some servers serve .json files that are actually gzip-compressed.
+	if isGzipFile(tmpPath) {
+		decompressed, err := decompressGzipFile(tmpPath)
+		if err != nil {
+			cleanupFn()
+			return "", nil, fmt.Errorf("decompress gzip: %w", err)
+		}
+		os.Remove(tmpPath)
+		logger.Info("decompressed gzip",
+			"size_mb", fmt.Sprintf("%.1f", float64(fileSize(decompressed))/1024/1024))
+		tmpPath = decompressed
+		cleanupFn = func() { os.Remove(decompressed) }
+	}
+
 	// If the extension is ambiguous (e.g. .aspx, .csv default), sniff the
 	// file content to detect JSON vs CSV.
 	curExt := strings.ToLower(filepath.Ext(tmpPath))
@@ -834,6 +850,19 @@ func doDownload(w io.Writer, rawURL string) (downloadResult, error) {
 		return downloadResult{}, fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
 	}
 
+	// Decompress gzip response body if Content-Encoding indicates gzip.
+	// (When Accept-Encoding is set explicitly, Go's http.Client does NOT
+	// auto-decompress, so we must do it ourselves.)
+	body := resp.Body
+	if strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") {
+		gz, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return downloadResult{}, fmt.Errorf("gzip reader: %w", err)
+		}
+		defer gz.Close()
+		body = gz
+	}
+
 	// Extract filename from Content-Disposition header if present.
 	var filename string
 	if cd := resp.Header.Get("Content-Disposition"); cd != "" {
@@ -857,7 +886,7 @@ func doDownload(w io.Writer, rawURL string) (downloadResult, error) {
 
 	buf := make([]byte, 256*1024)
 	for {
-		nr, readErr := resp.Body.Read(buf)
+		nr, readErr := body.Read(buf)
 		if nr > 0 {
 			nw, writeErr := w.Write(buf[:nr])
 			totalBytes += int64(nw)
@@ -929,6 +958,57 @@ func sniffFileType(path string) string {
 		return ".json"
 	}
 	return ".csv"
+}
+
+// isGzipFile checks if a file starts with the gzip magic bytes (0x1f 0x8b).
+func isGzipFile(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	var magic [2]byte
+	if _, err := io.ReadFull(f, magic[:]); err != nil {
+		return false
+	}
+	return magic[0] == 0x1f && magic[1] == 0x8b
+}
+
+// decompressGzipFile decompresses a gzip file to a new temp file.
+// Returns the path to the decompressed file.
+func decompressGzipFile(gzPath string) (string, error) {
+	in, err := os.Open(gzPath)
+	if err != nil {
+		return "", err
+	}
+	defer in.Close()
+
+	gz, err := gzip.NewReader(in)
+	if err != nil {
+		return "", fmt.Errorf("gzip reader: %w", err)
+	}
+	defer gz.Close()
+
+	// Determine output extension from the original path (strip .gz if present).
+	outExt := filepath.Ext(gzPath)
+	if strings.EqualFold(outExt, ".gz") {
+		outExt = filepath.Ext(strings.TrimSuffix(gzPath, outExt))
+		if outExt == "" {
+			outExt = ".json"
+		}
+	}
+
+	out, err := os.CreateTemp("", "hospital-gunzip-*"+outExt)
+	if err != nil {
+		return "", err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, gz); err != nil {
+		os.Remove(out.Name())
+		return "", fmt.Errorf("decompress: %w", err)
+	}
+	return out.Name(), nil
 }
 
 func fileSize(path string) int64 {
